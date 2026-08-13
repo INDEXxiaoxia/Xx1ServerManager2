@@ -1,0 +1,60 @@
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+html, body, #app {
+  height: 100%;
+  width: 100%;
+  font-family: 'Segoe UI', 'Microsoft YaHei', system-ui, -apple-system, sans-serif;
+  font-size: 14px;
+  color: #303133;
+  background: #f5f7fa;
+}
+
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+::-webkit-scrollbar-thumb {
+  background: #c0c4cc;
+  border-radius: 4px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.page-container {
+  padding: 16px;
+  height: 100%;
+  overflow-y: auto;
+}
+
+.card {
+  background: #fff;
+  border-radius: 8px;
+  padding: 16px;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.06);
+}
+
+.flex-between {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.mb-12 { margin-bottom: 12px; }
+.mt-12 { margin-top: 12px; }
+
+.text-muted { color: #909399; }
+.text-success { color: #67c23a; }
+.text-danger { color: #f56c6c; }
+.text-warning { color: #e6a23c; }
+
+.mono {
+  font-family: 'Cascadia Code', Consolas, 'Courier New', monospace;
+  font-size: 12px;
+  white-space: pre-wrap;
+  word-break: break-all;
+}
