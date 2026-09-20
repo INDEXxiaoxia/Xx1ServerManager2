@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"embed"
 
 	"github.com/wailsapp/wails/v2"
@@ -25,6 +26,10 @@ func main() {
 		},
 		BackgroundColour: &options.RGBA{R: 27, G: 38, B: 54, A: 1},
 		OnStartup:        app.startup,
+		OnShutdown: func(ctx context.Context) {
+			// 释放文件管理复用的 SFTP 连接，避免退出时残留会话
+			app.CloseFileClients()
+		},
 		Bind: []interface{}{
 			app,
 		},

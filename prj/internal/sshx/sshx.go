@@ -216,6 +216,391 @@ func (c *Client) ListDir(path string) ([]models.FileEntry, error) {
 	return entries, nil
 }
 
+// HomeDir 获取远端 home 目录（优先使用 SFTP 的 realpath 语义，失败则回落 shell）
+func (c *Client) HomeDir() (string, error) {
+	if sc, err := c.sftpClient(); err == nil {
+		if dir, err := sc.Getwd(); err == nil && strings.HasPrefix(dir, "/") {
+			return dir, nil
+		}
+	}
+	code, out, stderr := c.ExecCommand("LC_ALL=C cd ~ && pwd", 15, false)
+	if code != 0 {
+		return "", errors.New(firstLine(stderr))
+	}
+	dir := strings.TrimSpace(out)
+	if !strings.HasPrefix(dir, "/") {
+		return "", errors.New("无法获取远端 home 目录")
+	}
+	return dir, nil
+}
+
+// StatPath 获取远程路径信息（不存在或不可访问时返回错误）
+func (c *Client) StatPath(path string) (os.FileInfo, error) {
+	sc, err := c.sftpClient()
+	if err != nil {
+		return nil, err
+	}
+	return sc.Stat(path)
+}
+
+// IsSymlink 判断路径是否为符号链接（用于避免目录栏把软链接误判为普通目录/文件）
+func (c *Client) IsSymlink(path string) bool {
+	sc, err := c.sftpClient()
+	if err != nil {
+		return false
+	}
+	info, err := sc.Lstat(path)
+	if err != nil {
+		return false
+	}
+	return info.Mode()&os.ModeSymlink != 0
+}
+
+// Peek 读取文件头部最多 maxBytes 字节（用于编码/二进制嗅探，不加载整个大文件）
+func (c *Client) Peek(path string, maxBytes int64) ([]byte, error) {
+	if maxBytes <= 0 {
+		maxBytes = 8192
+	}
+	sc, err := c.sftpClient()
+	if err != nil {
+		return nil, err
+	}
+	rf, err := sc.Open(path)
+	if err != nil {
+		return nil, err
+	}
+	defer rf.Close()
+	buf := make([]byte, maxBytes)
+	n, err := io.ReadFull(rf, buf)
+	if err != nil && err != io.EOF && err != io.ErrUnexpectedEOF {
+		return nil, err
+	}
+	return buf[:n], nil
+}
+
+// ReadAll 一次性读取整个文件，超过 maxBytes 返回错误（避免把巨型文件读进内存）
+// sizeHint 为远端 Stat 报告的大小，用于第一次读取前的快速拒绝
+func (c *Client) ReadAll(path string, sizeHint, maxBytes int64) ([]byte, error) {
+	if maxBytes > 0 && sizeHint > maxBytes {
+		return nil, fmt.Errorf("文件过大（%.1f MB），超过在线编辑上限 %.1f MB", float64(sizeHint)/1048576, float64(maxBytes)/1048576)
+	}
+	sc, err := c.sftpClient()
+	if err != nil {
+		return nil, err
+	}
+	rf, err := sc.Open(path)
+	if err != nil {
+		return nil, err
+	}
+	defer rf.Close()
+
+	limit := maxBytes
+	if limit <= 0 {
+		limit = sizeHint + 1024
+	}
+	if limit <= 0 {
+		limit = 4 * 1024 * 1024
+	}
+	data, err := io.ReadAll(io.LimitReader(rf, limit+1))
+	if err != nil {
+		return nil, err
+	}
+	if int64(len(data)) > limit {
+		if maxBytes > 0 {
+			return nil, fmt.Errorf("文件过大（超过 %.1f MB），已取消在线编辑", float64(maxBytes)/1048576)
+		}
+		return nil, errors.New("文件在读取过程中变大，已取消操作")
+	}
+	return data, nil
+}
+
+// WriteFileBytes 覆盖写入远程文件，并保持原有权限位。
+// 使用 OpenFile(WRONLY|CREATE|TRUNC) 而不是 Create()：
+// Create() 依赖远端默认 umask（可能产生 0666），且会丢失权限位。
+func (c *Client) WriteFileBytes(path string, data []byte, mode os.FileMode) error {
+	sc, err := c.sftpClient()
+	if err != nil {
+		return err
+	}
+	f, err := sc.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_TRUNC)
+	if err != nil {
+		return err
+	}
+	if _, err := f.Write(data); err != nil {
+		f.Close()
+		return err
+	}
+	// 显式 Flush 后关闭，确保数据落盘再改权限
+	if err := f.Close(); err != nil {
+		return err
+	}
+	if mode != 0 {
+		if err := sc.Chmod(path, mode.Perm()); err != nil {
+			return fmt.Errorf("文件已写入，但恢复权限 %s 失败: %w", mode.Perm().String(), err)
+		}
+	}
+	return nil
+}
+
+// DirSizeMethod 目录大小计算方式
+const (
+	DirSizeMethodDu   = "du"
+	DirSizeMethodWalk = "walk"
+)
+
+// dirSizeLimits SFTP 回退遍历的限制，防止对超大目录（如 /）无限扫描
+const (
+	dirSizeMaxEntries = 200000
+	dirSizeMaxElapsed = 60 * time.Second
+
+	// 搜索上限：深度 8 层、结果 500 条、耗时 30s
+	searchMaxDepth   = 8
+	searchMaxResults = 500
+	searchMaxElapsed = 30 * time.Second
+)
+
+// DirSize 计算目录占用的显式大小（apparent size，与文件 Stat().Size() 口径一致）。
+// 优先使用远端 du（快），不可用时回退为 SFTP 递归遍历并由调用方感知 method=walk。
+func (c *Client) DirSize(path string) (int64, string, error) {
+	if size, err := c.dirSizeByDu(path); err == nil {
+		return size, DirSizeMethodDu, nil
+	} else {
+		walkSize, walkErr := c.dirSizeByWalk(path)
+		if walkErr == nil {
+			return walkSize, DirSizeMethodWalk, nil
+		}
+		return 0, "", fmt.Errorf("du 与遍历方式均失败：%v；%v", err, walkErr)
+	}
+}
+
+// dirSizeByDu 使用远端 du 计算目录大小。
+// -b/--bytes 为 GNU 扩展；老版本 coreutils 与 BusyBox 参数不兼容时逐个回退。
+func (c *Client) dirSizeByDu(path string) (int64, error) {
+	variants := [][]string{
+		{"du", "-sbP", path},
+		{"du", "-s", "--block-size=1", "-P", path},
+		{"du", "-sk", path}, // 最后退化为 KB 精度（BusyBox）
+	}
+	var lastErr error
+	for i, argv := range variants {
+		cmd := fmt.Sprintf("LC_ALL=C %s 2>&1", shellJoin(argv))
+		code, out, _ := c.ExecCommand(cmd, 60, false)
+		if code != 0 {
+			lastErr = fmt.Errorf("du 执行失败: %s", firstLine(out))
+			continue
+		}
+		size, ok := parseDuSize(out)
+		if !ok {
+			lastErr = fmt.Errorf("du 输出无法解析: %s", firstLine(out))
+			continue
+		}
+		if i == 2 {
+			size *= 1024 // -k 为 KB 精度
+		}
+		return size, nil
+	}
+	if lastErr == nil {
+		lastErr = errors.New("du 不可用")
+	}
+	return 0, lastErr
+}
+
+// parseDuSize 解析 du 输出，取第一个字段为字节数。
+// 不使用空格切分整行：路径可能包含空格、中文甚至换行，只信任首个字段。
+func parseDuSize(out string) (int64, bool) {
+	for _, line := range strings.Split(out, "\n") {
+		line = strings.TrimLeft(line, " \t")
+		if line == "" {
+			continue
+		}
+		field := line
+		if idx := strings.IndexAny(line, " \t"); idx >= 0 {
+			field = line[:idx]
+		}
+		if v, err := strconv.ParseInt(field, 10, 64); err == nil && v >= 0 {
+			return v, true
+		}
+	}
+	return 0, false
+}
+
+// dirSizeByWalk SFTP 递归遍历兜底方案：
+// 跳过符号链接（防止循环与越权），并对条目数与耗时设上限。
+func (c *Client) dirSizeByWalk(root string) (int64, error) {
+	sc, err := c.sftpClient()
+	if err != nil {
+		return 0, err
+	}
+	start := time.Now()
+	var total int64
+	var count int
+	reachedLimit := errors.New("目录过大，遍历已达上限")
+
+	w := sc.Walk(root)
+	for w.Step() {
+		// 单个子目录无权限时跳过，但根目录本身不可读需要报错
+		if err := w.Err(); err != nil {
+			if w.Path() == root {
+				return 0, err
+			}
+		} else if info := w.Stat(); info != nil && !info.IsDir() {
+			count++
+			if count > dirSizeMaxEntries {
+				return 0, reachedLimit
+			}
+			total += info.Size()
+		}
+		if time.Since(start) > dirSizeMaxElapsed {
+			return 0, errors.New("目录过大，遍历超时（60s）")
+		}
+	}
+	return total, nil
+}
+
+// SearchDir 按文件名在远端搜索。
+// recursive 为假时只扫描 root 这一层（目录很大也很快）；
+// 为真时递归子目录，并受 maxDepth / maxResults / 30s 超时三重限制。
+// 返回的 truncated 表示因达到上限而结果不完整。
+func (c *Client) SearchDir(root, keyword string, recursive bool, maxDepth, maxResults int) ([]models.FileEntry, bool, int, error) {
+	sc, err := c.sftpClient()
+	if err != nil {
+		return nil, false, 0, err
+	}
+	if maxDepth <= 0 {
+		maxDepth = searchMaxDepth
+	}
+	if maxResults <= 0 {
+		maxResults = searchMaxResults
+	}
+	start := time.Now()
+	var out []models.FileEntry
+	truncated := false
+	scanned := 0
+
+	appendEntry := func(path string, info os.FileInfo) bool {
+		scanned++
+		if MatchFileName(keyword, info.Name()) {
+			out = append(out, models.FileEntry{
+				Name:    info.Name(),
+				Path:    path,
+				IsDir:   info.IsDir(),
+				Size:    info.Size(),
+				Mode:    info.Mode().String(),
+				ModTime: info.ModTime().Format("2006-01-02 15:04:05"),
+			})
+			if len(out) >= maxResults {
+				truncated = true
+				return false
+			}
+		}
+		return true
+	}
+
+	if !recursive {
+		infos, err := sc.ReadDir(root)
+		if err != nil {
+			return nil, false, 0, err
+		}
+		for _, info := range infos {
+			if !appendEntry(joinRemote(root, info.Name()), info) {
+				break
+			}
+		}
+		return out, truncated, scanned, nil
+	}
+
+	rootDepth := strings.Count(strings.Trim(root, "/"), "/")
+	w := sc.Walk(root)
+	for w.Step() {
+		if err := w.Err(); err != nil {
+			// 单个子目录无权限时跳过，但根目录本身不可读需要报错
+			if w.Path() == root {
+				return nil, false, scanned, err
+			}
+			continue
+		}
+		// kr/fs 的 Walker 基于 Lstat，不会跟随符号链接；
+		// 且 Stat() 取的是目录项本身而非目标，因此不会走进链接目录。
+		info := w.Stat()
+		if info == nil {
+			continue
+		}
+		if info.IsDir() {
+			depth := strings.Count(strings.Trim(w.Path(), "/"), "/") - rootDepth
+			if depth >= maxDepth {
+				w.SkipDir()
+			}
+			continue
+		}
+		if !appendEntry(w.Path(), info) {
+			break
+		}
+		if time.Since(start) > searchMaxElapsed {
+			truncated = true
+			break
+		}
+	}
+	return out, truncated, scanned, nil
+}
+
+// MatchFileName 文件名模糊匹配：大小写不敏感的子串匹配，
+// 关键字中的 * 与 ? 按通配符处理，[] 一律按字面量处理（避免字符类注入）。
+func MatchFileName(keyword, name string) bool {
+	keyword = strings.TrimSpace(keyword)
+	if keyword == "" {
+		return false
+	}
+	lowName := strings.ToLower(name)
+	lowKw := strings.ToLower(keyword)
+	if strings.Contains(lowName, lowKw) {
+		return true
+	}
+	if !strings.ContainsAny(keyword, "*?") {
+		return false
+	}
+	// 先转义字符类元字符，再交给 filepath.Match
+	pattern := strings.NewReplacer("[", "[[]", "]", "[]]").Replace(lowKw)
+	if ok, err := filepath.Match("*"+pattern+"*", lowName); err == nil && ok {
+		return true
+	}
+	return false
+}
+
+// joinRemote 拼接远程路径，避免出现 // 与丢失根目录
+func joinRemote(dir, name string) string {
+	if strings.HasSuffix(dir, "/") || dir == "" {
+		return dir + name
+	}
+	return dir + "/" + name
+}
+
+// ---- 远端 shell ----
+
+// shellQuote 单引号包裹参数，兼容空格、中文、$ 与换行
+func shellQuote(s string) string {
+	return "'" + strings.ReplaceAll(s, "'", `'\''`) + "'"
+}
+
+// shellJoin 将 argv 拼接为安全的命令行
+func shellJoin(argv []string) string {
+	parts := make([]string, 0, len(argv))
+	for _, a := range argv {
+		parts = append(parts, shellQuote(a))
+	}
+	return strings.Join(parts, " ")
+}
+
+func firstLine(s string) string {
+	if idx := strings.IndexByte(s, '\n'); idx >= 0 {
+		s = s[:idx]
+	}
+	s = strings.TrimSpace(s)
+	if len(s) > 200 {
+		s = s[:200]
+	}
+	return s
+}
+
 // MakeDirs 递归创建远程目录
 func (c *Client) MakeDirs(path string) error {
 	sc, err := c.sftpClient()

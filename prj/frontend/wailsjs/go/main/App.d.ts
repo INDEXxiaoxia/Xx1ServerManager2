@@ -4,6 +4,8 @@ import {models} from '../models';
 
 export function ChmodRemote(arg1:string,arg2:string,arg3:number):Promise<void>;
 
+export function CloseFileClients():Promise<void>;
+
 export function DeleteGroup(arg1:string):Promise<void>;
 
 export function DeletePresetCommand(arg1:string):Promise<void>;
@@ -16,6 +18,8 @@ export function DeleteServer(arg1:string):Promise<void>;
 
 export function DeleteServers(arg1:Array<string>):Promise<number>;
 
+export function DetectRemoteEncoding(arg1:string,arg2:string):Promise<models.TextFileMeta>;
+
 export function DownloadFromServer(arg1:string,arg2:string,arg3:string):Promise<void>;
 
 export function GetAppInfo():Promise<Record<string, any>>;
@@ -23,6 +27,8 @@ export function GetAppInfo():Promise<Record<string, any>>;
 export function GetCommandHistory(arg1:number):Promise<Array<models.CommandHistory>>;
 
 export function GetMonitorHistory(arg1:string,arg2:number):Promise<Array<models.MonitorPoint>>;
+
+export function GetRemoteDirSizes(arg1:string,arg2:Array<string>):Promise<Array<models.DirSizeItem>>;
 
 export function GetRemoteFileInfo(arg1:string,arg2:string):Promise<Record<string, any>>;
 
@@ -58,7 +64,11 @@ export function ListServices(arg1:string):Promise<Array<models.SystemService>>;
 
 export function MakeRemoteDir(arg1:string,arg2:string):Promise<void>;
 
+export function ReadRemoteTextFile(arg1:string,arg2:string,arg3:string):Promise<models.TextFileContent>;
+
 export function RenameRemote(arg1:string,arg2:string,arg3:string):Promise<void>;
+
+export function ResolveRemotePath(arg1:string,arg2:string):Promise<string>;
 
 export function SaveGroup(arg1:models.Group):Promise<models.Group>;
 
@@ -69,6 +79,8 @@ export function SavePresetPath(arg1:models.PresetPath):Promise<models.PresetPath
 export function SaveServer(arg1:models.Server):Promise<models.Server>;
 
 export function SaveSettings(arg1:models.Settings):Promise<void>;
+
+export function SearchRemoteDir(arg1:string,arg2:string,arg3:string,arg4:boolean):Promise<models.SearchResult>;
 
 export function SelectLocalFile():Promise<string>;
 
@@ -104,4 +116,8 @@ export function TestStoredServer(arg1:string):Promise<Record<string, any>>;
 
 export function UploadToServer(arg1:string,arg2:string,arg3:string):Promise<void>;
 
+export function ValidateRemoteDir(arg1:string,arg2:string):Promise<Record<string, any>>;
+
 export function VerifyMasterPassword(arg1:string):Promise<boolean>;
+
+export function WriteRemoteTextFile(arg1:string,arg2:string,arg3:models.TextFileWriteRequest):Promise<void>;

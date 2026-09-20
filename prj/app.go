@@ -20,6 +20,11 @@ type App struct {
 
 	monitorMu sync.Mutex
 	monitors  map[string]context.CancelFunc
+
+	// 文件管理复用连接：目录浏览/大小计算/搜索都会产生大量 SFTP 请求，
+	// 每次操作新建 SSH 连接会显著拖慢（计算目录大小可能需要上百次 stat）。
+	fileMu    sync.Mutex
+	fileConns map[string]*fileSession
 }
 
 // NewApp 创建应用实例
@@ -27,6 +32,7 @@ func NewApp() *App {
 	return &App{
 		terminals: make(map[string]*TerminalSession),
 		monitors:  make(map[string]context.CancelFunc),
+		fileConns: make(map[string]*fileSession),
 	}
 }
 

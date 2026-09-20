@@ -6,6 +6,10 @@ export function ChmodRemote(arg1, arg2, arg3) {
   return window['go']['main']['App']['ChmodRemote'](arg1, arg2, arg3);
 }
 
+export function CloseFileClients() {
+  return window['go']['main']['App']['CloseFileClients']();
+}
+
 export function DeleteGroup(arg1) {
   return window['go']['main']['App']['DeleteGroup'](arg1);
 }
@@ -30,6 +34,10 @@ export function DeleteServers(arg1) {
   return window['go']['main']['App']['DeleteServers'](arg1);
 }
 
+export function DetectRemoteEncoding(arg1, arg2) {
+  return window['go']['main']['App']['DetectRemoteEncoding'](arg1, arg2);
+}
+
 export function DownloadFromServer(arg1, arg2, arg3) {
   return window['go']['main']['App']['DownloadFromServer'](arg1, arg2, arg3);
 }
@@ -44,6 +52,10 @@ export function GetCommandHistory(arg1) {
 
 export function GetMonitorHistory(arg1, arg2) {
   return window['go']['main']['App']['GetMonitorHistory'](arg1, arg2);
+}
+
+export function GetRemoteDirSizes(arg1, arg2) {
+  return window['go']['main']['App']['GetRemoteDirSizes'](arg1, arg2);
 }
 
 export function GetRemoteFileInfo(arg1, arg2) {
@@ -114,8 +126,16 @@ export function MakeRemoteDir(arg1, arg2) {
   return window['go']['main']['App']['MakeRemoteDir'](arg1, arg2);
 }
 
+export function ReadRemoteTextFile(arg1, arg2, arg3) {
+  return window['go']['main']['App']['ReadRemoteTextFile'](arg1, arg2, arg3);
+}
+
 export function RenameRemote(arg1, arg2, arg3) {
   return window['go']['main']['App']['RenameRemote'](arg1, arg2, arg3);
+}
+
+export function ResolveRemotePath(arg1, arg2) {
+  return window['go']['main']['App']['ResolveRemotePath'](arg1, arg2);
 }
 
 export function SaveGroup(arg1) {
@@ -136,6 +156,10 @@ export function SaveServer(arg1) {
 
 export function SaveSettings(arg1) {
   return window['go']['main']['App']['SaveSettings'](arg1);
+}
+
+export function SearchRemoteDir(arg1, arg2, arg3, arg4) {
+  return window['go']['main']['App']['SearchRemoteDir'](arg1, arg2, arg3, arg4);
 }
 
 export function SelectLocalFile() {
@@ -206,6 +230,14 @@ export function UploadToServer(arg1, arg2, arg3) {
   return window['go']['main']['App']['UploadToServer'](arg1, arg2, arg3);
 }
 
+export function ValidateRemoteDir(arg1, arg2) {
+  return window['go']['main']['App']['ValidateRemoteDir'](arg1, arg2);
+}
+
 export function VerifyMasterPassword(arg1) {
   return window['go']['main']['App']['VerifyMasterPassword'](arg1);
+}
+
+export function WriteRemoteTextFile(arg1, arg2, arg3) {
+  return window['go']['main']['App']['WriteRemoteTextFile'](arg1, arg2, arg3);
 }

@@ -56,6 +56,15 @@ export const api = {
   selectLocalFile: () => App.SelectLocalFile(),
   selectLocalSavePath: (defaultName) => App.SelectLocalSavePath(defaultName),
 
+  // 文件管理 · 目录栏 / 搜索 / 目录大小 / 在线编辑
+  resolveRemotePath: (serverId, path) => App.ResolveRemotePath(serverId, path),
+  validateRemoteDir: (serverId, path) => App.ValidateRemoteDir(serverId, path),
+  getRemoteDirSizes: (serverId, paths) => asArray(App.GetRemoteDirSizes(serverId, paths)),
+  searchRemoteDir: (serverId, root, keyword, recursive) => App.SearchRemoteDir(serverId, root, keyword, recursive),
+  detectRemoteEncoding: (serverId, path) => App.DetectRemoteEncoding(serverId, path),
+  readRemoteTextFile: (serverId, path, encoding) => App.ReadRemoteTextFile(serverId, path, encoding),
+  writeRemoteTextFile: (serverId, path, req) => App.WriteRemoteTextFile(serverId, path, req),
+
   // 实时监控
   getServerStats: (serverId) => App.GetServerStats(serverId),
   startMonitor: (serverId) => App.StartMonitor(serverId),

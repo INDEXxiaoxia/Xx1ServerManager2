@@ -113,6 +113,60 @@ type FileEntry struct {
 	ModTime string `json:"modTime"`
 }
 
+// DirSizeItem 目录大小计算结果（每个目录独立成败，便于前端逐行渲染）
+type DirSizeItem struct {
+	Path   string `json:"path"`
+	Size   int64  `json:"size"`
+	Method string `json:"method"` // du | walk
+	Error  string `json:"error"`
+}
+
+// SearchResult 远程文件名搜索结果
+type SearchResult struct {
+	Root      string      `json:"root"`
+	Keyword   string      `json:"keyword"`
+	Recursive bool        `json:"recursive"`
+	Items     []FileEntry `json:"items"`
+	Truncated bool        `json:"truncated"` // 命中上限被截断
+	Scanned   int         `json:"scanned"`   // 已扫描条目数
+	ElapsedMs int64       `json:"elapsedMs"`
+}
+
+// TextFileMeta 文本文件元信息（编码/二进制/换行探测结果，不加载全文）
+type TextFileMeta struct {
+	Path     string `json:"path"`
+	Name     string `json:"name"`
+	Size     int64  `json:"size"`
+	Encoding string `json:"encoding"`
+	HasBOM   bool   `json:"hasBOM"`
+	Binary   bool   `json:"binary"`
+	EOL      string `json:"eol"`      // lf | crlf | cr
+	EOLMixed bool   `json:"eolMixed"` // 同一文件混用换行
+	Editable bool   `json:"editable"`
+	Message  string `json:"message"` // 不可编辑时的原因说明
+}
+
+// TextFileContent 文本文件内容。
+// Base64 承载原始字节（未解码），避免非 UTF-8 内容经 JSON 桥被替换为 U+FFFD。
+type TextFileContent struct {
+	Path     string `json:"path"`
+	Size     int64  `json:"size"`
+	Base64   string `json:"base64"`
+	Encoding string `json:"encoding"`
+	HasBOM   bool   `json:"hasBOM"`
+	EOL      string `json:"eol"`
+	EOLMixed bool   `json:"eolMixed"`
+	Truncated bool  `json:"truncated"`
+}
+
+// TextFileWriteRequest 文本文件保存请求
+type TextFileWriteRequest struct {
+	Text     string `json:"text"`
+	Encoding string `json:"encoding"`
+	KeepBOM  bool   `json:"keepBOM"` // 显式为 true 才会写入 UTF-8 BOM
+	EOL      string `json:"eol"`     // lf | crlf | cr
+}
+
 // SystemService systemd 服务
 type SystemService struct {
 	Name        string `json:"name"`

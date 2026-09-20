@@ -78,12 +78,20 @@ func (a *App) SaveServer(sv models.Server) (models.Server, error) {
 	if isNew {
 		return sv, a.store.AddServer(&sv)
 	}
-	return sv, a.store.UpdateServer(&sv)
+	if err := a.store.UpdateServer(&sv); err != nil {
+		return sv, err
+	}
+	// 主机/端口/账号/密码可能已变更，旧连接不能继续复用
+	a.invalidateFileClient(sv.ID)
+	return sv, nil
 }
 
 // DeleteServer 删除服务器
 func (a *App) DeleteServer(id string) error {
-	return a.store.DeleteServer(id)
+	err := a.store.DeleteServer(id)
+	// 连接配置已失效，丢弃文件管理的复用连接
+	a.invalidateFileClient(id)
+	return err
 }
 
 // DeleteServers 批量删除服务器
@@ -93,6 +101,7 @@ func (a *App) DeleteServers(ids []string) (int, error) {
 		if err := a.store.DeleteServer(id); err == nil {
 			count++
 		}
+		a.invalidateFileClient(id)
 	}
 	return count, nil
 }

@@ -49,6 +49,24 @@ export namespace models {
 		    return a;
 		}
 	}
+	export class DirSizeItem {
+	    path: string;
+	    size: number;
+	    method: string;
+	    error: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new DirSizeItem(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.path = source["path"];
+	        this.size = source["size"];
+	        this.method = source["method"];
+	        this.error = source["error"];
+	    }
+	}
 	export class FileEntry {
 	    name: string;
 	    path: string;
@@ -243,6 +261,48 @@ export namespace models {
 		    return a;
 		}
 	}
+	export class SearchResult {
+	    root: string;
+	    keyword: string;
+	    recursive: boolean;
+	    items: FileEntry[];
+	    truncated: boolean;
+	    scanned: number;
+	    elapsedMs: number;
+	
+	    static createFrom(source: any = {}) {
+	        return new SearchResult(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.root = source["root"];
+	        this.keyword = source["keyword"];
+	        this.recursive = source["recursive"];
+	        this.items = this.convertValues(source["items"], FileEntry);
+	        this.truncated = source["truncated"];
+	        this.scanned = source["scanned"];
+	        this.elapsedMs = source["elapsedMs"];
+	    }
+	
+		convertValues(a: any, classs: any, asMap: boolean = false): any {
+		    if (!a) {
+		        return a;
+		    }
+		    if (a.slice && a.map) {
+		        return (a as any[]).map(elem => this.convertValues(elem, classs));
+		    } else if ("object" === typeof a) {
+		        if (asMap) {
+		            for (const key of Object.keys(a)) {
+		                a[key] = new classs(a[key]);
+		            }
+		            return a;
+		        }
+		        return new classs(a);
+		    }
+		    return a;
+		}
+	}
 	export class Server {
 	    id: string;
 	    name: string;
@@ -331,6 +391,80 @@ export namespace models {
 	        this.activeState = source["activeState"];
 	        this.subState = source["subState"];
 	        this.enabled = source["enabled"];
+	    }
+	}
+	export class TextFileContent {
+	    path: string;
+	    size: number;
+	    base64: string;
+	    encoding: string;
+	    hasBOM: boolean;
+	    eol: string;
+	    eolMixed: boolean;
+	    truncated: boolean;
+	
+	    static createFrom(source: any = {}) {
+	        return new TextFileContent(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.path = source["path"];
+	        this.size = source["size"];
+	        this.base64 = source["base64"];
+	        this.encoding = source["encoding"];
+	        this.hasBOM = source["hasBOM"];
+	        this.eol = source["eol"];
+	        this.eolMixed = source["eolMixed"];
+	        this.truncated = source["truncated"];
+	    }
+	}
+	export class TextFileMeta {
+	    path: string;
+	    name: string;
+	    size: number;
+	    encoding: string;
+	    hasBOM: boolean;
+	    binary: boolean;
+	    eol: string;
+	    eolMixed: boolean;
+	    editable: boolean;
+	    message: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new TextFileMeta(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.path = source["path"];
+	        this.name = source["name"];
+	        this.size = source["size"];
+	        this.encoding = source["encoding"];
+	        this.hasBOM = source["hasBOM"];
+	        this.binary = source["binary"];
+	        this.eol = source["eol"];
+	        this.eolMixed = source["eolMixed"];
+	        this.editable = source["editable"];
+	        this.message = source["message"];
+	    }
+	}
+	export class TextFileWriteRequest {
+	    text: string;
+	    encoding: string;
+	    keepBOM: boolean;
+	    eol: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new TextFileWriteRequest(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.text = source["text"];
+	        this.encoding = source["encoding"];
+	        this.keepBOM = source["keepBOM"];
+	        this.eol = source["eol"];
 	    }
 	}
 

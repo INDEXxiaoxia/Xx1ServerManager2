@@ -10,6 +10,7 @@
 
 # Go 工作区/依赖缓存
 vendor/
+.gocache/
 
 # ============ Wails 打包产物 ============
 prj/build/bin/
