@@ -187,6 +187,6 @@ CREATE INDEX IF NOT EXISTS idx_monitor_history_server_id ON monitor_history(serv
 2. **df 与 /proc/mounts 合并成一条命令**：用 `<<<SM2-DF>>>` / `<<<SM2-MOUNTS>>>` 标记分段，每轮采集只多一次 SSH 往返（原设计是两条命令）。
 3. **无 `-T` 时的伪盘判定改为"宁多勿漏"**：只按明确的伪文件系统名（tmpfs/devtmpfs/overlay…）过滤，认不出的设备名（如 ZFS 的 `pool/dataset`）一律当真实盘保留，避免误藏真实存储。
 
-验证：`go test ./...`（20 个用例全过，含新增 13 个）、`go vet ./...`、`go build ./...`、`npm run build`、`wails build` 全部通过，产物 `prj/build/bin/prj.exe` 已更新。
+验证：`go test ./...`（39 个用例全过，含新增 13 个）、`go vet ./...`、`go build ./...`、`npm run build`、`wails build` 全部通过，产物 `prj/build/bin/prj.exe` 已更新。
 
 待真机核对：解析逻辑以单测样例（GNU / BSD / 无 `-T` 三种布局）为准，尚未连真实服务器比对界面数值；建议在有第二块盘的机器上确认卡片迷你条与监控页多曲线是否符合预期。

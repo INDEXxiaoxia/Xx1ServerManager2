@@ -437,6 +437,22 @@ func (s *Store) GetMonitorHistory(serverID string, limit int) ([]models.MonitorP
 	return points, rows.Err()
 }
 
+// PruneMonitorHistory 删除 cutoff 之前的历史监控点，返回删除行数。
+// 时间比较走 julianday() 而不是按 RFC3339 字符串字面量比：跨时区/夏令时切换时
+// 字面量顺序不等于真实时间顺序，交给 SQLite 解析时区后缀更稳妥。
+func (s *Store) PruneMonitorHistory(cutoff time.Time) (int64, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	res, err := s.db.Exec(
+		`DELETE FROM monitor_history WHERE julianday(timestamp) < julianday(?)`,
+		cutoff.Format(time.RFC3339),
+	)
+	if err != nil {
+		return 0, err
+	}
+	return res.RowsAffected()
+}
+
 // nullableDiskJSON 没有磁盘快照时写 NULL，让新老数据走同一条回退逻辑
 func nullableDiskJSON(s string) any {
 	if strings.TrimSpace(s) == "" {

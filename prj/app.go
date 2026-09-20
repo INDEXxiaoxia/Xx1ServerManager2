@@ -46,6 +46,8 @@ func (a *App) startup(ctx context.Context) {
 	}
 	a.store = st
 	a.crypto = crypto.New()
+	// 监控历史只保留最近 24 小时，启动时清一次并进入定时清理
+	a.startHistoryPruner()
 }
 
 // Greet 保留的示例方法

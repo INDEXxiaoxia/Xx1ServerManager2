@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"time"
 
 	"github.com/wailsapp/wails/v2/pkg/runtime"
@@ -12,6 +13,45 @@ import (
 )
 
 const monitorInterval = 5 * time.Second
+
+const (
+	// monitorRetention 监控数据保留期：界面最多只看最近 60 个点，留一天足够回溯排查
+	monitorRetention = 24 * time.Hour
+	// historyPruneInterval 清理周期：与采集间隔解耦，不必每个采集周期都扫一遍表
+	historyPruneInterval = 30 * time.Minute
+)
+
+// pruneHistory 清除保留期之外的监控历史（全局清理，覆盖所有服务器）
+func (a *App) pruneHistory() {
+	if a.store == nil {
+		return
+	}
+	n, err := a.store.PruneMonitorHistory(time.Now().Add(-monitorRetention))
+	if err != nil {
+		fmt.Println("清理监控历史失败:", err)
+		return
+	}
+	if n > 0 {
+		fmt.Printf("已清除 %d 条超过 %s 的监控数据\n", n, monitorRetention)
+	}
+}
+
+// startHistoryPruner 启动保留期清理：先立刻清一次（补上上次退出后积压的过期数据），之后定时清理
+func (a *App) startHistoryPruner() {
+	a.pruneHistory()
+	go func() {
+		t := time.NewTicker(historyPruneInterval)
+		defer t.Stop()
+		for {
+			select {
+			case <-a.ctx.Done():
+				return
+			case <-t.C:
+				a.pruneHistory()
+			}
+		}
+	}()
+}
 
 // fetchStats 获取服务器实时统计
 func (a *App) fetchStats(serverID string) (map[string]any, error) {

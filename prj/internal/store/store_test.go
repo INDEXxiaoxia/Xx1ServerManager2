@@ -143,3 +143,71 @@ func TestMigrationIdempotent(t *testing.T) {
 		}
 	}
 }
+
+// TestPruneMonitorHistory 保留期清理：只删截止时间之前的点，保留期内的点一条不动
+func TestPruneMonitorHistory(t *testing.T) {
+	st, err := NewStore(filepath.Join(t.TempDir(), "prune.db"))
+	if err != nil {
+		t.Fatalf("建库失败: %v", err)
+	}
+	defer st.Close()
+
+	now := time.Now()
+	// 前两条超期（25h / 30h 前），后三条在保留期内
+	stamps := []time.Time{
+		now.Add(-30 * time.Hour),
+		now.Add(-25 * time.Hour),
+		now.Add(-23 * time.Hour),
+		now.Add(-1 * time.Hour),
+		now,
+	}
+	for i, ts := range stamps {
+		if err := st.AddMonitorPoint(&models.MonitorPoint{ServerID: "s1", CPUUsage: float64(i), Timestamp: ts}); err != nil {
+			t.Fatalf("写入监控点失败: %v", err)
+		}
+	}
+	// 另一台服务器的数据同样受保留期约束（清理是全局的）
+	if err := st.AddMonitorPoint(&models.MonitorPoint{ServerID: "s2", Timestamp: now.Add(-26 * time.Hour)}); err != nil {
+		t.Fatalf("写入 s2 监控点失败: %v", err)
+	}
+
+	n, err := st.PruneMonitorHistory(now.Add(-24 * time.Hour))
+	if err != nil {
+		t.Fatalf("清理失败: %v", err)
+	}
+	if n != 3 {
+		t.Fatalf("应删除 3 行（s1 两条 + s2 一条），got %d", n)
+	}
+
+	points, err := st.GetMonitorHistory("s1", 100)
+	if err != nil {
+		t.Fatalf("读取历史失败: %v", err)
+	}
+	if len(points) != 3 {
+		t.Fatalf("保留期内应剩 3 条，got %d", len(points))
+	}
+	if points[0].Timestamp.Before(now.Add(-24 * time.Hour)) {
+		t.Fatalf("超期数据未被清除: %+v", points[0])
+	}
+	if left, _ := st.GetMonitorHistory("s2", 100); len(left) != 0 {
+		t.Fatalf("s2 超期数据应被清除，got %d", len(left))
+	}
+
+	// 同一个截止时间再清一次：没有可删的，且不应报错
+	if n, err := st.PruneMonitorHistory(now.Add(-24 * time.Hour)); err != nil || n != 0 {
+		t.Fatalf("重复清理应删除 0 行，got %d err=%v", n, err)
+	}
+
+	// 截止时间推到未来：全部清空
+	if n, err := st.PruneMonitorHistory(now.Add(time.Hour)); err != nil || n != 3 {
+		t.Fatalf("应清空剩余 3 条，got %d err=%v", n, err)
+	}
+	if points, _ := st.GetMonitorHistory("s1", 100); len(points) != 0 {
+		t.Fatalf("清空后不应有数据，got %d", len(points))
+	}
+
+	// 空表清理不报错
+	if n, err := st.PruneMonitorHistory(now); err != nil || n != 0 {
+		t.Fatalf("空表清理异常: n=%d err=%v", n, err)
+	}
+}
