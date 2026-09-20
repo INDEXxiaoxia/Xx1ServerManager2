@@ -17,9 +17,17 @@ import (
 
 // Store 数据访问层
 type Store struct {
-	db *sql.DB
-	mu sync.RWMutex
+	db      *sql.DB
+	dbPath  string
+	dataDir string
+	mu      sync.RWMutex
 }
+
+// ConfigDir 返回配置文件（数据库）所在目录
+func (s *Store) ConfigDir() string { return s.dataDir }
+
+// DBPath 返回数据库文件完整路径
+func (s *Store) DBPath() string { return s.dbPath }
 
 // NewStore 创建并初始化数据库
 func NewStore(dbPath string) (*Store, error) {
@@ -41,7 +49,7 @@ func NewStore(dbPath string) (*Store, error) {
 	}
 	db.SetMaxOpenConns(1) // SQLite 单写入者
 
-	s := &Store{db: db}
+	s := &Store{db: db, dbPath: dbPath, dataDir: filepath.Dir(dbPath)}
 	if err := s.init(); err != nil {
 		db.Close()
 		return nil, err

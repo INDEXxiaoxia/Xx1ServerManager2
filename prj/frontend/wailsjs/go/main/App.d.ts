@@ -26,6 +26,8 @@ export function GetAppInfo():Promise<Record<string, any>>;
 
 export function GetCommandHistory(arg1:number):Promise<Array<models.CommandHistory>>;
 
+export function GetConfigDirInfo():Promise<Record<string, any>>;
+
 export function GetMonitorHistory(arg1:string,arg2:number):Promise<Array<models.MonitorPoint>>;
 
 export function GetRemoteDirSizes(arg1:string,arg2:Array<string>):Promise<Array<models.DirSizeItem>>;
@@ -63,6 +65,8 @@ export function ListServers():Promise<Array<models.Server>>;
 export function ListServices(arg1:string):Promise<Array<models.SystemService>>;
 
 export function MakeRemoteDir(arg1:string,arg2:string):Promise<void>;
+
+export function OpenConfigDir():Promise<string>;
 
 export function ReadRemoteTextFile(arg1:string,arg2:string,arg3:string):Promise<models.TextFileContent>;
 

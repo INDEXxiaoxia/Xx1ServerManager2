@@ -39,6 +39,8 @@ export const api = {
   // 设置
   getSettings: () => App.GetSettings(),
   saveSettings: (s) => App.SaveSettings(s),
+  getConfigDirInfo: () => App.GetConfigDirInfo(),
+  openConfigDir: () => App.OpenConfigDir(),
 
   // 批量上传/执行
   startBatchUpload: (serverIds, localPaths, remoteDir) => App.StartBatchUpload(serverIds, localPaths, remoteDir),

@@ -50,6 +50,10 @@ export function GetCommandHistory(arg1) {
   return window['go']['main']['App']['GetCommandHistory'](arg1);
 }
 
+export function GetConfigDirInfo() {
+  return window['go']['main']['App']['GetConfigDirInfo']();
+}
+
 export function GetMonitorHistory(arg1, arg2) {
   return window['go']['main']['App']['GetMonitorHistory'](arg1, arg2);
 }
@@ -124,6 +128,10 @@ export function ListServices(arg1) {
 
 export function MakeRemoteDir(arg1, arg2) {
   return window['go']['main']['App']['MakeRemoteDir'](arg1, arg2);
+}
+
+export function OpenConfigDir() {
+  return window['go']['main']['App']['OpenConfigDir']();
 }
 
 export function ReadRemoteTextFile(arg1, arg2, arg3) {

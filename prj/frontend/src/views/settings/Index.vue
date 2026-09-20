@@ -9,6 +9,9 @@ const masterSet = ref(false)
 const pwDialog = ref(false)
 const pw = reactive({p1: '', p2: ''})
 const saving = ref(false)
+const configDir = ref('')
+const configDirExists = ref(false)
+const openingDir = ref(false)
 
 async function load() {
   const s = await api.getSettings()
@@ -16,8 +19,28 @@ async function load() {
   // 主题以本地持久化值为准（可在解锁前生效），数据库仅作同步
   settings.theme = getStoredTheme()
   masterSet.value = await api.isMasterPasswordSet()
+  try {
+    const info = await api.getConfigDirInfo()
+    configDir.value = (info && info.dir) || ''
+    configDirExists.value = !!(info && info.exists)
+  } catch (e) {
+    configDir.value = ''
+  }
 }
 onMounted(load)
+
+// 在系统文件管理器中打开配置文件（数据库）所在目录
+async function openConfigDir() {
+  openingDir.value = true
+  try {
+    const dir = await api.openConfigDir()
+    ElMessage.success('已打开配置目录：' + dir)
+  } catch (e) {
+    ElMessage.error('打开配置目录失败：' + e)
+  } finally {
+    openingDir.value = false
+  }
+}
 
 function onThemeChange() {
   applyTheme(settings.theme)
@@ -82,6 +105,17 @@ async function setPassword() {
         </el-form-item>
         <el-form-item>
           <el-button type="primary" :loading="saving" @click="save">保存设置</el-button>
+          <el-tooltip
+            :content="configDir ? `配置文件目录：${configDir}` : '打开配置文件所在目录'"
+            placement="top"
+          >
+            <el-button :loading="openingDir" @click="openConfigDir">
+              <el-icon><FolderOpened /></el-icon>&nbsp;打开配置文件目录
+            </el-button>
+          </el-tooltip>
+        </el-form-item>
+        <el-form-item v-if="configDir" label="配置文件目录">
+          <span class="mono cfg-path" :class="{missing: !configDirExists}">{{ configDir }}</span>
         </el-form-item>
       </el-form>
     </div>
@@ -157,4 +191,11 @@ async function setPassword() {
   border: 1px solid #21E6FF;
   box-shadow: 0 0 6px rgba(33, 230, 255, .6);
 }
+.mono { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+.cfg-path {
+  font-size: 12px;
+  color: var(--ink-2);
+  word-break: break-all;
+}
+.cfg-path.missing { color: var(--red); }
 </style>
