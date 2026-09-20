@@ -92,10 +92,13 @@ async function remove(type, item) {
           </el-table-column>
           <el-table-column prop="command" label="命令" min-width="260" show-overflow-tooltip class-name="mono" />
           <el-table-column prop="description" label="描述" min-width="160" show-overflow-tooltip />
-          <el-table-column label="操作" width="120">
+          <!-- 操作列留足宽度（约可容纳 3 个按钮），保证按钮始终不换行 -->
+          <el-table-column label="操作" width="220" fixed="right">
             <template #default="{row}">
-              <el-button size="small" text type="primary" @click="openEdit(row, 'command')">编辑</el-button>
-              <el-button size="small" text type="danger" @click="remove('command', row)">删除</el-button>
+              <div class="op-bar">
+                <el-button size="small" text type="primary" @click="openEdit(row, 'command')">编辑</el-button>
+                <el-button size="small" text type="danger" @click="remove('command', row)">删除</el-button>
+              </div>
             </template>
           </el-table-column>
         </el-table>
@@ -108,10 +111,13 @@ async function remove(type, item) {
           <el-table-column prop="name" label="名称" min-width="120" />
           <el-table-column prop="path" label="路径" min-width="260" show-overflow-tooltip class-name="mono" />
           <el-table-column prop="description" label="描述" min-width="160" show-overflow-tooltip />
-          <el-table-column label="操作" width="120">
+          <!-- 操作列留足宽度（约可容纳 3 个按钮），保证按钮始终不换行 -->
+          <el-table-column label="操作" width="220" fixed="right">
             <template #default="{row}">
-              <el-button size="small" text type="primary" @click="openEdit(row, 'path')">编辑</el-button>
-              <el-button size="small" text type="danger" @click="remove('path', row)">删除</el-button>
+              <div class="op-bar">
+                <el-button size="small" text type="primary" @click="openEdit(row, 'path')">编辑</el-button>
+                <el-button size="small" text type="danger" @click="remove('path', row)">删除</el-button>
+              </div>
             </template>
           </el-table-column>
         </el-table>
@@ -175,6 +181,16 @@ async function remove(type, item) {
 }
 .tab-panel {
   padding-top: 4px;
+}
+.op-bar {
+  display: flex;
+  align-items: center;
+  white-space: nowrap;
+}
+.op-bar .el-button {
+  padding-left: 6px;
+  padding-right: 6px;
+  margin-left: 0;
 }
 .count {
   margin-top: 10px;

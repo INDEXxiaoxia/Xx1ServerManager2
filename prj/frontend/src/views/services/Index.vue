@@ -105,13 +105,25 @@ onMounted(async () => {
             </el-tag>
           </template>
         </el-table-column>
-        <el-table-column label="操作" width="300" fixed="right">
+        <el-table-column label="操作" width="210" fixed="right">
           <template #default="{row}">
-            <el-button size="small" text type="success" @click="action(row, 'start')">启动</el-button>
-            <el-button size="small" text type="warning" @click="action(row, 'restart')">重启</el-button>
-            <el-button size="small" text type="danger" @click="action(row, 'stop')">停止</el-button>
-            <el-button size="small" text @click="action(row, row.enabled === 'enabled' ? 'disable' : 'enable')">自启</el-button>
-            <el-button size="small" text type="primary" @click="showStatus(row)">状态</el-button>
+            <div class="op-bar">
+              <el-button size="small" text type="primary" @click="showStatus(row)">状态</el-button>
+              <el-button size="small" text type="success" @click="action(row, 'start')">启动</el-button>
+              <el-button size="small" text type="warning" @click="action(row, 'restart')">重启</el-button>
+              <el-dropdown trigger="click" @command="cmd => action(row, cmd)">
+                <el-button size="small" text class="more-btn">
+                  更多<el-icon class="el-icon--right"><ArrowDown /></el-icon>
+                </el-button>
+                <template #dropdown>
+                  <el-dropdown-menu>
+                    <el-dropdown-item command="stop" :disabled="row.activeState !== 'active'">停止</el-dropdown-item>
+                    <el-dropdown-item command="enable" v-if="row.enabled !== 'enabled'">设置自启</el-dropdown-item>
+                    <el-dropdown-item command="disable" v-else>取消自启</el-dropdown-item>
+                  </el-dropdown-menu>
+                </template>
+              </el-dropdown>
+            </div>
           </template>
         </el-table-column>
       </el-table>
@@ -124,6 +136,17 @@ onMounted(async () => {
 </template>
 
 <style scoped>
+.op-bar {
+  display: flex;
+  align-items: center;
+  white-space: nowrap;
+}
+.op-bar .el-button {
+  padding-left: 6px;
+  padding-right: 6px;
+  margin-left: 0;
+}
+.more-btn { color: var(--ink-3); }
 .status-text {
   background: var(--terminal-bg);
   color: var(--terminal-fg);

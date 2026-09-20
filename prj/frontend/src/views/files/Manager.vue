@@ -509,6 +509,16 @@ async function onEdited() {
   await loadDir()
 }
 
+// ---- 行操作 ----
+// 目录：重命名 / 权限 / 更多（复制路径、删除）
+// 文件：编辑 / 下载 / 更多（重命名、权限、复制路径、删除）
+function onRowMoreCommand(cmd, row) {
+  if (cmd === 'rename') openRename(row)
+  else if (cmd === 'chmod') openChmod(row)
+  else if (cmd === 'copy') copyPath(row)
+  else if (cmd === 'delete') remove(row)
+}
+
 function copyPath(entry) {
   const p = entry.path
   if (navigator.clipboard && navigator.clipboard.writeText) {
@@ -701,17 +711,37 @@ onBeforeUnmount(() => {
         <el-table-column prop="mode" label="权限" width="110" />
         <el-table-column prop="modTime" label="修改时间" width="165" sortable="custom" />
 
-        <el-table-column label="操作" width="240" fixed="right">
+        <el-table-column label="操作" width="200" fixed="right">
           <template #default="{row}">
-            <!-- 目录没有下载/编辑语义，只保留重命名、权限、复制路径、删除 -->
-            <template v-if="!row.isDir">
-              <el-button size="small" text type="primary" @click="openEditor(row)">编辑</el-button>
-              <el-button size="small" text type="primary" @click="download(row)">下载</el-button>
-            </template>
-            <el-button size="small" text type="primary" @click="openRename(row)">重命名</el-button>
-            <el-button size="small" text @click="openChmod(row)">权限</el-button>
-            <el-button size="small" text @click="copyPath(row)">复制路径</el-button>
-            <el-button size="small" text type="danger" @click="remove(row)">删除</el-button>
+            <div class="op-bar">
+              <!-- 文件：编辑、下载直接展示 -->
+              <template v-if="!row.isDir">
+                <el-button size="small" text type="primary" @click="openEditor(row)">编辑</el-button>
+                <el-button size="small" text type="primary" @click="download(row)">下载</el-button>
+              </template>
+              <!-- 目录：重命名、权限直接展示 -->
+              <template v-else>
+                <el-button size="small" text type="primary" @click="openRename(row)">重命名</el-button>
+                <el-button size="small" text @click="openChmod(row)">权限</el-button>
+              </template>
+
+              <el-dropdown trigger="click" @command="cmd => onRowMoreCommand(cmd, row)">
+                <el-button size="small" text class="more-btn">
+                  更多<el-icon class="el-icon--right"><ArrowDown /></el-icon>
+                </el-button>
+                <template #dropdown>
+                  <el-dropdown-menu>
+                    <!-- 文件的重命名/权限收进「更多」；目录则直接展示 -->
+                    <template v-if="!row.isDir">
+                      <el-dropdown-item command="rename">重命名</el-dropdown-item>
+                      <el-dropdown-item command="chmod">权限</el-dropdown-item>
+                    </template>
+                    <el-dropdown-item command="copy">复制路径</el-dropdown-item>
+                    <el-dropdown-item command="delete" divided>删除</el-dropdown-item>
+                  </el-dropdown-menu>
+                </template>
+              </el-dropdown>
+            </div>
           </template>
         </el-table-column>
 
@@ -812,6 +842,17 @@ onBeforeUnmount(() => {
 }
 .list-meta { font-size: 13px; color: var(--ink-2); }
 .list-meta b { color: var(--ink); font-size: 15px; }
+.op-bar {
+  display: flex;
+  align-items: center;
+  white-space: nowrap;
+}
+.op-bar .el-button {
+  padding-left: 6px;
+  padding-right: 6px;
+  margin-left: 0;
+}
+.more-btn { color: var(--ink-3); }
 .search-input { width: 300px; }
 .compute-progress {
   display: inline-flex;

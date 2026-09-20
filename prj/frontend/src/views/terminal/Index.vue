@@ -213,6 +213,10 @@ function closeMenu() {
 function onMenuCopy() {
   const term = activeTerm()
   closeMenu()
+  if (!hasSelection.value) {
+    ElMessage.warning('请先用鼠标选中要复制的内容')
+    return
+  }
   copySelection(term)
 }
 
