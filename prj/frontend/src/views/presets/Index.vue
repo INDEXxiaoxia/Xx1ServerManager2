@@ -75,9 +75,9 @@ async function remove(type, item) {
 
       <!-- 工具行：切换 + 新建 -->
       <div class="flex-between mb-12">
-        <div class="tab-buttons">
-          <el-button :type="tab === 'commands' ? 'primary' : 'default'" @click="tab = 'commands'">预设命令</el-button>
-          <el-button :type="tab === 'paths' ? 'primary' : 'default'" @click="tab = 'paths'">预设路径</el-button>
+        <div class="tab-buttons" role="tablist">
+          <button type="button" class="tab-button" :class="{active: tab === 'commands'}" @click="tab = 'commands'">预设命令</button>
+          <button type="button" class="tab-button" :class="{active: tab === 'paths'}" @click="tab = 'paths'">预设路径</button>
         </div>
         <el-button v-if="tab === 'commands'" type="primary" @click="openAdd('command')">新建命令</el-button>
         <el-button v-else type="primary" @click="openAdd('path')">新建路径</el-button>
@@ -146,22 +146,46 @@ async function remove(type, item) {
 
 <style scoped>
 .tab-buttons {
-  display: flex;
-  gap: 8px;
+  display: inline-flex;
+  gap: 2px;
+  padding: 3px;
+  background: var(--fill-color);
+  border-radius: 999px;
+}
+.tab-button {
+  border: none;
+  outline: none;
+  cursor: pointer;
+  background: transparent;
+  padding: 7px 18px;
+  border-radius: 999px;
+  font-size: 13px;
+  color: var(--ink-2);
+  font-family: inherit;
+  transition: background-color .25s ease, color .25s ease, box-shadow .25s ease;
+}
+.tab-button:hover {
+  color: var(--ink);
+}
+.tab-button.active {
+  background: var(--card);
+  color: var(--blue-deep);
+  font-weight: 600;
+  box-shadow: var(--card-shadow);
 }
 .tab-panel {
   padding-top: 4px;
 }
 .count {
   margin-top: 10px;
-  color: #909399;
+  color: var(--ink-3);
   font-size: 13px;
 }
 .page-error {
-  background: #fef0f0;
-  color: #f56c6c;
-  border: 1px solid #fbc4c4;
-  border-radius: 6px;
+  background: var(--red-soft);
+  color: var(--red);
+  border: 1px solid var(--el-border-color-lighter);
+  border-radius: 10px;
   padding: 10px 12px;
   margin-bottom: 12px;
   font-family: Consolas, Menlo, monospace;

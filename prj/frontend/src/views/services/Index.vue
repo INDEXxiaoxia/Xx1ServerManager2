@@ -15,10 +15,10 @@ const statusText = ref('')
 const statusTitle = ref('')
 
 const filtered = () => {
-  const rows = services.value
+  const rows = services.value || []
   if (!keyword.value) return rows
   const k = keyword.value.toLowerCase()
-  return rows.filter(r => r.name.toLowerCase().includes(k) || r.description.toLowerCase().includes(k))
+  return rows.filter(r => (r.name || '').toLowerCase().includes(k) || (r.description || '').toLowerCase().includes(k))
 }
 
 async function loadServers() {
@@ -125,10 +125,10 @@ onMounted(async () => {
 
 <style scoped>
 .status-text {
-  background: #1e1e1e;
-  color: #d4d4d4;
-  padding: 12px;
-  border-radius: 6px;
+  background: var(--terminal-bg);
+  color: var(--terminal-fg);
+  padding: 12px 14px;
+  border-radius: 10px;
   max-height: 400px;
   overflow-y: auto;
 }

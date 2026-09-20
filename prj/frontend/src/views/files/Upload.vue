@@ -20,9 +20,9 @@ async function load() {
 onMounted(load)
 
 function getServerGroupColor(server) {
-  if (!server.groupIds || !server.groupIds.length) return '#dcdfe6'
+  if (!server.groupIds || !server.groupIds.length) return 'var(--ink-3)'
   const g = groups.value.find(x => x.id === server.groupIds[0])
-  return g?.color || '#dcdfe6'
+  return g?.color || 'var(--ink-3)'
 }
 
 async function pickFile() {
@@ -174,7 +174,25 @@ onBeforeUnmount(() => {
   height: calc(100vh - 160px);
 }
 .right-panel { flex: 1; min-width: 0; }
-.card-title { font-size: 15px; margin: 0; }
+.card-title {
+  position: relative;
+  display: inline-block;
+  padding-left: 12px;
+  font-size: 16px;
+  font-weight: 600;
+  margin: 0;
+}
+.card-title::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 3px;
+  height: 14px;
+  border-radius: 999px;
+  background: linear-gradient(180deg, var(--blue), var(--pink));
+}
 .tag-item { margin-right: 8px; margin-bottom: 4px; }
 .server-tag {
   margin-right: 8px;

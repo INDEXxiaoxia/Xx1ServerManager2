@@ -1,6 +1,10 @@
 // Wails Go 后端 API 封装
 const App = window.go.main.App
 
+// 确保后端列表返回值为数组：Go 侧可能返回 null/undefined（nil 切片），
+// 此处统一兜底为空数组，避免前端对 null 调用 .length/.forEach 等导致白屏
+const asArray = (p) => p.then((v) => (Array.isArray(v) ? v : []))
+
 export const api = {
   // 应用/认证
   getAppInfo: () => App.GetAppInfo(),
@@ -10,7 +14,7 @@ export const api = {
   verifyMasterPassword: (p) => App.VerifyMasterPassword(p),
 
   // 服务器
-  listServers: () => App.ListServers(),
+  listServers: () => asArray(App.ListServers()),
   getServer: (id) => App.GetServer(id),
   saveServer: (s) => App.SaveServer(s),
   deleteServer: (id) => App.DeleteServer(id),
@@ -20,15 +24,15 @@ export const api = {
   setServerStatus: (id, status) => App.SetServerStatus(id, status),
 
   // 分组
-  listGroups: () => App.ListGroups(),
+  listGroups: () => asArray(App.ListGroups()),
   saveGroup: (g) => App.SaveGroup(g),
   deleteGroup: (id) => App.DeleteGroup(id),
 
   // 预设
-  listPresetCommands: () => App.ListPresetCommands(),
+  listPresetCommands: () => asArray(App.ListPresetCommands()),
   savePresetCommand: (c) => App.SavePresetCommand(c),
   deletePresetCommand: (id) => App.DeletePresetCommand(id),
-  listPresetPaths: () => App.ListPresetPaths(),
+  listPresetPaths: () => asArray(App.ListPresetPaths()),
   savePresetPath: (p) => App.SavePresetPath(p),
   deletePresetPath: (id) => App.DeletePresetPath(id),
 
@@ -39,10 +43,10 @@ export const api = {
   // 批量上传/执行
   startBatchUpload: (serverIds, localPaths, remoteDir) => App.StartBatchUpload(serverIds, localPaths, remoteDir),
   startBatchCommand: (serverIds, command, timeout) => App.StartBatchCommand(serverIds, command, timeout),
-  getCommandHistory: (limit) => App.GetCommandHistory(limit),
+  getCommandHistory: (limit) => asArray(App.GetCommandHistory(limit)),
 
   // 文件管理
-  listRemoteDir: (serverId, path) => App.ListRemoteDir(serverId, path),
+  listRemoteDir: (serverId, path) => asArray(App.ListRemoteDir(serverId, path)),
   makeRemoteDir: (serverId, path) => App.MakeRemoteDir(serverId, path),
   renameRemote: (serverId, oldPath, newPath) => App.RenameRemote(serverId, oldPath, newPath),
   deleteRemote: (serverId, path, isDir) => App.DeleteRemote(serverId, path, isDir),
@@ -57,12 +61,12 @@ export const api = {
   startMonitor: (serverId) => App.StartMonitor(serverId),
   stopMonitor: (serverId) => App.StopMonitor(serverId),
   stopAllMonitors: () => App.StopAllMonitors(),
-  getMonitorHistory: (serverId, limit) => App.GetMonitorHistory(serverId, limit),
-  getTopProcesses: (serverId, limit) => App.GetTopProcesses(serverId, limit),
+  getMonitorHistory: (serverId, limit) => asArray(App.GetMonitorHistory(serverId, limit)),
+  getTopProcesses: (serverId, limit) => asArray(App.GetTopProcesses(serverId, limit)),
 
   // 服务管理
-  listServices: (serverId) => App.ListServices(serverId),
-  getServicesWithEnabled: (serverId) => App.GetServicesWithEnabled(serverId),
+  listServices: (serverId) => asArray(App.ListServices(serverId)),
+  getServicesWithEnabled: (serverId) => asArray(App.GetServicesWithEnabled(serverId)),
   serviceAction: (serverId, name, action) => App.ServiceAction(serverId, name, action),
   getServiceStatus: (serverId, name) => App.GetServiceStatus(serverId, name),
 

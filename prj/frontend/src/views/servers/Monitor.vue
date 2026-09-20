@@ -1,8 +1,9 @@
 <script setup>
-import {ref, onMounted, onBeforeUnmount, nextTick} from 'vue'
+import {ref, watch, onMounted, onBeforeUnmount, nextTick} from 'vue'
 import * as echarts from 'echarts'
 import {useRoute} from 'vue-router'
 import {api, events} from '@/api'
+import {themeState, getChartTheme} from '@/theme'
 
 const route = useRoute()
 const servers = ref([])
@@ -36,19 +37,81 @@ function initCharts() {
 }
 
 function buildOption(kind) {
-  const base = {
-    tooltip: {trigger: 'axis'},
-    grid: {left: 40, right: 20, top: 30, bottom: 30},
-    xAxis: {type: 'category', data: []},
-    yAxis: {type: 'value'},
-    series: [{type: 'line', smooth: true, showSymbol: false, data: [], areaStyle: {opacity: 0.1}}]
+  const ct = getChartTheme(themeState.name)
+  const color = ct.series[kind] || ct.series.cpu
+  const cfg = {
+    cpu: {name: 'CPU%', max: 100},
+    mem: {name: '内存%', max: 100},
+    disk: {name: '磁盘%', max: 100},
+    net: {name: '网络 KB/s'}
+  }[kind] || {name: kind}
+  return {
+    tooltip: {
+      trigger: 'axis',
+      backgroundColor: ct.tooltipBg,
+      borderColor: ct.tooltipBorder,
+      textStyle: {color: ct.tooltipText}
+    },
+    grid: {left: 44, right: 20, top: 30, bottom: 30},
+    xAxis: {
+      type: 'category',
+      data: [],
+      boundaryGap: false,
+      axisLabel: {color: ct.axis},
+      axisLine: {lineStyle: {color: ct.line}},
+      axisTick: {lineStyle: {color: ct.line}}
+    },
+    yAxis: {
+      type: 'value',
+      max: cfg.max,
+      axisLabel: {color: ct.axis},
+      axisLine: {lineStyle: {color: ct.line}},
+      splitLine: {lineStyle: {color: ct.split}}
+    },
+    series: [{
+      type: 'line',
+      name: cfg.name,
+      color,
+      smooth: true,
+      showSymbol: false,
+      data: [],
+      lineStyle: {width: 2},
+      areaStyle: {
+        color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [
+          {offset: 0, color: color + '2E'},
+          {offset: 1, color: color + '00'}
+        ])
+      }
+    }]
   }
-  if (kind === 'cpu') { base.series[0].name = 'CPU%'; base.series[0].color = '#409eff'; base.yAxis.max = 100 }
-  if (kind === 'mem') { base.series[0].name = '内存%'; base.series[0].color = '#67c23a'; base.yAxis.max = 100 }
-  if (kind === 'disk') { base.series[0].name = '磁盘%'; base.series[0].color = '#e6a23c'; base.yAxis.max = 100 }
-  if (kind === 'net') { base.series[0].name = '网络 KB/s'; base.series[0].color = '#764ba2' }
-  return base
 }
+
+// 主题切换：图表坐标轴 / 网格 / 系列色即时刷新（保留曲线数据）
+watch(() => themeState.name, () => {
+  const ct = getChartTheme(themeState.name)
+  ;['cpu', 'mem', 'disk', 'net'].forEach(k => {
+    const c = charts[k]
+    if (!c) return
+    c.setOption({
+      xAxis: {
+        axisLabel: {color: ct.axis},
+        axisLine: {lineStyle: {color: ct.line}},
+        axisTick: {lineStyle: {color: ct.line}}
+      },
+      yAxis: {
+        axisLabel: {color: ct.axis},
+        axisLine: {lineStyle: {color: ct.line}},
+        splitLine: {lineStyle: {color: ct.split}}
+      },
+      tooltip: {
+        backgroundColor: ct.tooltipBg,
+        borderColor: ct.tooltipBorder,
+        textStyle: {color: ct.tooltipText}
+      },
+      series: [{color: ct.series[k] || ct.series.cpu}]
+    })
+  })
+})
 
 function pushPoint(kind, time, value, unit = 1) {
   const opt = charts[kind].getOption()
@@ -174,5 +237,5 @@ onBeforeUnmount(() => {
 
 <style scoped>
 .chart { height: 260px; }
-h4 { margin-bottom: 8px; color: #606266; }
+h4 { margin-bottom: 8px; color: var(--ink-2); }
 </style>

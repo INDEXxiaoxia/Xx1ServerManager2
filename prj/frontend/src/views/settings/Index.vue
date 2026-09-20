@@ -2,6 +2,7 @@
 import {ref, reactive, onMounted} from 'vue'
 import {ElMessage} from 'element-plus'
 import {api} from '@/api'
+import {applyTheme, THEMES, getStoredTheme} from '@/theme'
 
 const settings = reactive({maxConcurrent: 5, uploadTimeout: 300, commandTimeout: 30, theme: 'light'})
 const masterSet = ref(false)
@@ -12,9 +13,16 @@ const saving = ref(false)
 async function load() {
   const s = await api.getSettings()
   Object.assign(settings, s)
+  // 主题以本地持久化值为准（可在解锁前生效），数据库仅作同步
+  settings.theme = getStoredTheme()
   masterSet.value = await api.isMasterPasswordSet()
 }
 onMounted(load)
+
+function onThemeChange() {
+  applyTheme(settings.theme)
+  save()
+}
 
 async function save() {
   saving.value = true
@@ -51,7 +59,7 @@ async function setPassword() {
 <template>
   <div class="page-container">
     <div class="card mb-12">
-      <h3>常规设置</h3>
+      <h3 class="card-title">常规设置</h3>
       <el-form label-width="120px" class="mt-12">
         <el-form-item label="最大并发数">
           <el-input-number v-model="settings.maxConcurrent" :min="1" :max="20" />
@@ -63,9 +71,13 @@ async function setPassword() {
           <el-input-number v-model="settings.commandTimeout" :min="5" :max="300" />
         </el-form-item>
         <el-form-item label="主题">
-          <el-select v-model="settings.theme" style="width: 200px">
-            <el-option label="浅色" value="light" />
-            <el-option label="深色" value="dark" />
+          <el-select v-model="settings.theme" style="width: 200px" @change="onThemeChange">
+            <el-option v-for="t in THEMES" :key="t.name" :label="t.label" :value="t.name">
+              <span class="theme-option">
+                <i class="theme-dot" :class="'theme-dot--' + t.name" />
+                {{ t.label }}
+              </span>
+            </el-option>
           </el-select>
         </el-form-item>
         <el-form-item>
@@ -75,7 +87,7 @@ async function setPassword() {
     </div>
 
     <div class="card">
-      <h3>安全</h3>
+      <h3 class="card-title">安全</h3>
       <div class="flex-between mt-12">
         <div>
           <div>主密码状态：
@@ -99,3 +111,50 @@ async function setPassword() {
     </el-dialog>
   </div>
 </template>
+
+<style scoped>
+.card-title {
+  position: relative;
+  display: inline-block;
+  padding-left: 12px;
+  font-size: 16px;
+  font-weight: 600;
+  margin: 0;
+}
+.card-title::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 3px;
+  height: 14px;
+  border-radius: 999px;
+  background: linear-gradient(180deg, var(--blue), var(--pink));
+}
+.theme-option {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+.theme-dot {
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  display: inline-block;
+  flex-shrink: 0;
+}
+.theme-dot--light {
+  background: linear-gradient(135deg, #F5F4F1, #D9D5CC);
+  border: 1px solid #B8B4AA;
+}
+.theme-dot--dark {
+  background: linear-gradient(135deg, #3A3B44, #1D1E24);
+  border: 1px solid #555760;
+}
+.theme-dot--cyber {
+  background: radial-gradient(circle at 30% 30%, #21E6FF, #0B0F1A 60%);
+  border: 1px solid #21E6FF;
+  box-shadow: 0 0 6px rgba(33, 230, 255, .6);
+}
+</style>

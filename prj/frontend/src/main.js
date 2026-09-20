@@ -7,6 +7,11 @@ import {createPinia} from 'pinia'
 import App from './App.vue'
 import router from './router'
 import './style.css'
+import {applyTheme, getStoredTheme, THEME_BG} from './theme'
+
+// 启动前先应用持久化主题，避免首屏闪白后跳主题
+applyTheme(getStoredTheme())
+document.documentElement.style.backgroundColor = THEME_BG[getStoredTheme()] || THEME_BG.light
 
 // 全局错误可见化：任何页面渲染出错时，在页面顶部显示红色错误条，
 // 方便在没有 DevTools 的 Wails 生产环境直接看到错误文本
@@ -23,7 +28,7 @@ function showErrorBar(text) {
     bar = document.createElement('div')
     bar.id = id
     bar.style.cssText =
-      'position:fixed;top:0;left:0;right:0;z-index:99999;background:#f56c6c;' +
+      'position:fixed;top:0;left:0;right:0;z-index:99999;background:#C2757C;' +
       'color:#fff;font:12px/1.5 Consolas,Menlo,monospace;padding:8px 12px;' +
       'white-space:pre-wrap;word-break:break-all;cursor:pointer;'
     bar.addEventListener('click', () => bar.remove())

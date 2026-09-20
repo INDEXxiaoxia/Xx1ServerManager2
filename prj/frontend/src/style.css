@@ -1,7 +1,155 @@
+/* ============================================================
+   ServerManager2 · 全局样式
+   设计理念：纸上烟云 —— 暖纸为底，雾蓝/柔粉/奶油黄为三原色
+   留白如呼吸，动效如微风。低饱和、易辨认、克制而雅致。
+   ============================================================ */
+
 * {
   margin: 0;
   padding: 0;
   box-sizing: border-box;
+}
+
+/* ---------- 色板（低饱和浅色） ---------- */
+:root {
+  /* 底色 */
+  --paper: #F5F4F1;        /* 页面底色 · 暖纸 */
+  --paper-deep: #ECE9E3;   /* 表头 / 次级底 */
+  --card: #FFFFFF;
+  --line: #E7E4DE;         /* 分割线 */
+
+  /* 文字（墨灰系，非纯黑） */
+  --ink: #46484F;          /* 主文字 */
+  --ink-2: #6E7078;        /* 次级文字 */
+  --ink-3: #8F919B;        /* 占位 / 弱化 */
+
+  /* 三原色 + 语义色 */
+  --blue: #5780A9;         /* 主色 · 雾蓝 */
+  --blue-deep: #44688F;
+  --blue-soft: #E0E9F1;
+  --pink: #C58A98;         /* 柔粉 */
+  --pink-soft: #F8EEF1;
+  --yellow: #C79E4F;       /* 奶油黄 */
+  --yellow-soft: #F9F2E2;
+  --green: #67947A;        /* 青绿 */
+  --green-soft: #EAF3EE;
+  --red: #C2757C;          /* 珊瑚红 */
+  --red-soft: #F9EDEE;
+  --violet: #9B7FB8;       /* 淡紫点缀 */
+
+  /* ---------- Element Plus 主题覆盖 ---------- */
+  --el-color-primary: #5780A9;
+  --el-color-primary-light-3: #7395B7;
+  --el-color-primary-light-5: #97B0CB;
+  --el-color-primary-light-7: #BBCBDB;
+  --el-color-primary-light-8: #CDD9E5;
+  --el-color-primary-light-9: #E0E9F1;
+  --el-color-primary-dark-2: #44688F;
+
+  --el-color-success: #67947A;
+  --el-color-success-light-3: #85AC90;
+  --el-color-success-light-5: #A3C2AA;
+  --el-color-success-light-7: #C1D7C6;
+  --el-color-success-light-8: #D0E1D4;
+  --el-color-success-light-9: #DFECE2;
+  --el-color-success-dark-2: #527660;
+
+  --el-color-warning: #C79E4F;
+  --el-color-warning-light-3: #D2B172;
+  --el-color-warning-light-5: #DEC896;
+  --el-color-warning-light-7: #E9DDBB;
+  --el-color-warning-light-8: #EFE5CA;
+  --el-color-warning-light-9: #F5EEDA;
+  --el-color-warning-dark-2: #9F7E3F;
+
+  --el-color-danger: #C2757C;
+  --el-color-danger-light-3: #CE9196;
+  --el-color-danger-light-5: #DBADB1;
+  --el-color-danger-light-7: #E8C9CC;
+  --el-color-danger-light-8: #EED8DA;
+  --el-color-danger-light-9: #F4E6E7;
+  --el-color-danger-dark-2: #9B5E63;
+
+  --el-color-error: #C2757C;
+  --el-color-error-light-3: #CE9196;
+  --el-color-error-light-5: #DBADB1;
+  --el-color-error-light-7: #E8C9CC;
+  --el-color-error-light-8: #EED8DA;
+  --el-color-error-light-9: #F4E6E7;
+  --el-color-error-dark-2: #9B5E63;
+
+  --el-color-info: #8F919B;
+  --el-color-info-light-3: #A5A7AF;
+  --el-color-info-light-5: #BDBEC5;
+  --el-color-info-light-7: #D4D5DA;
+  --el-color-info-light-8: #E0E1E5;
+  --el-color-info-light-9: #EDEDF0;
+  --el-color-info-dark-2: #72747C;
+
+  --el-border-radius-base: 10px;
+  --el-border-radius-small: 8px;
+  --el-border-radius-round: 999px;
+
+  --el-text-color-primary: #46484F;
+  --el-text-color-regular: #5B5D66;
+  --el-text-color-secondary: #8F919B;
+  --el-text-color-placeholder: #A9ABB4;
+  --el-text-color-disabled: #C2C4CA;
+
+  --el-border-color: #E7E4DE;
+  --el-border-color-light: #EBE9E3;
+  --el-border-color-lighter: #EFEDE8;
+  --el-border-color-extra-light: #F3F1ED;
+
+  --el-bg-color: #FFFFFF;
+  --el-bg-color-page: #F5F4F1;
+  --el-bg-color-overlay: #FFFFFF;
+  --el-fill-color: #F1EFEA;
+  --el-fill-color-light: #F3F1ED;
+  --el-fill-color-lighter: #F5F3EF;
+  --el-fill-color-extra-light: #FAF9F6;
+  --el-fill-color-dark: #E6E3DC;
+  --el-fill-color-darker: #DEDBD3;
+
+  --el-box-shadow: 0 8px 24px rgba(70, 72, 79, .06), 0 2px 6px rgba(70, 72, 79, .04);
+  --el-box-shadow-light: 0 4px 14px rgba(70, 72, 79, .07);
+  --el-box-shadow-lighter: 0 2px 10px rgba(70, 72, 79, .05);
+
+  /* 表格 */
+  --el-table-border-color: #EFEDE8;
+  --el-table-header-bg-color: #ECE9E3;
+  --el-table-header-text-color: #6E7078;
+  --el-table-row-hover-bg-color: #F7F5F1;
+  --el-table-bg-color: #FFFFFF;
+  --el-table-tr-bg-color: #FFFFFF;
+
+  /* 对话框 */
+  --el-dialog-border-radius: 18px;
+
+  /* ---------- 语义变量（主题切换锚点，dark/cyber 覆盖） ---------- */
+  --page-bg: #F5F4F1;              /* 页面底色 */
+  --panel-2: #FBFAF8;              /* 次级面板 / 树 / 侧栏 */
+  --hover-bg: #F1EFEA;             /* 悬停底 */
+  --header-bg: #FFFFFF;            /* 顶栏 */
+  --aside-bg: #FBFAF8;             /* 侧栏 */
+  --card-border: rgba(231, 228, 222, .7);
+  --card-shadow: 0 1px 2px rgba(70, 72, 79, .03), 0 10px 28px rgba(70, 72, 79, .05);
+  --card-shadow-hover: 0 2px 4px rgba(70, 72, 79, .04), 0 16px 36px rgba(70, 72, 79, .12);
+  --terminal-bg: #23262D;          /* 终端 / 命令输出底 */
+  --terminal-fg: #C7CBD4;
+  --terminal-accent: #5780A9;
+  --err-fg: #E5979D;               /* 命令错误输出 */
+  --stat-grad-1: #F2F6FA;          /* 统计卡渐变终点（蓝） */
+  --stat-grad-2: #F0F6F2;          /* （绿） */
+  --stat-grad-3: #FBF2F3;          /* （红） */
+  --sel-thumb: #D5D2CA;            /* 滚动条滑块 */
+  --sel-thumb-hover: #C4C0B8;
+  --halo-1: rgba(87, 128, 169, .22);  /* 右上光斑 */
+  --halo-2: rgba(197, 138, 152, .18); /* 左下光斑 */
+  --blue-glow: rgba(87, 128, 169, .20);       /* 主按钮阴影 */
+  --blue-glow-strong: rgba(87, 128, 169, .26);
+  --blue-focus: rgba(87, 128, 169, .14);      /* 输入聚焦光环 */
+  --blue-soft-glow: rgba(87, 128, 169, .16);  /* 选中文字 · 区域 */
 }
 
 html, body, #app {
@@ -9,33 +157,93 @@ html, body, #app {
   width: 100%;
   font-family: 'Segoe UI', 'Microsoft YaHei', system-ui, -apple-system, sans-serif;
   font-size: 14px;
-  color: #303133;
-  background: #f5f7fa;
+  color: var(--ink);
+  background: var(--page-bg);
+  transition: background-color .3s ease, color .3s ease;
 }
 
+#app {
+  position: relative;
+  overflow: hidden;
+}
+
+/* 背景光斑 · 纸上烟云（极淡，营造空气感） */
+#app::before,
+#app::after {
+  content: '';
+  position: fixed;
+  z-index: 0;
+  width: 52vw;
+  height: 52vw;
+  border-radius: 50%;
+  filter: blur(120px);
+  pointer-events: none;
+}
+#app::before {
+  top: -14vw;
+  right: -10vw;
+  background: radial-gradient(circle at center, var(--halo-1), transparent 62%);
+  animation: breathe 10s ease-in-out infinite;
+}
+#app::after {
+  bottom: -16vw;
+  left: -12vw;
+  background: radial-gradient(circle at center, var(--halo-2), transparent 62%);
+  animation: breathe 13s ease-in-out infinite reverse;
+}
+
+/* ---------- 动效帧 ---------- */
+@keyframes rise {
+  from { opacity: 0; transform: translateY(10px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+@keyframes breathe {
+  0%, 100% { opacity: .55; transform: scale(1); }
+  50%      { opacity: 1;   transform: scale(1.04); }
+}
+@keyframes float {
+  0%, 100% { transform: translateY(0); }
+  50%      { transform: translateY(-6px); }
+}
+
+/* ---------- 滚动条 ---------- */
 ::-webkit-scrollbar {
-  width: 8px;
-  height: 8px;
+  width: 6px;
+  height: 6px;
 }
 ::-webkit-scrollbar-thumb {
-  background: #c0c4cc;
-  border-radius: 4px;
+  background: var(--sel-thumb);
+  border-radius: 999px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: var(--sel-thumb-hover);
 }
 ::-webkit-scrollbar-track {
   background: transparent;
 }
 
+/* ---------- 选择与焦点 ---------- */
+::selection {
+  background: var(--blue-soft-glow);
+}
+:focus-visible {
+  outline: 2px solid var(--blue-glow-strong);
+  outline-offset: 1px;
+}
+
+/* ---------- 页面容器与工具类 ---------- */
+/* 页面不自行滚动，统一交由 el-main（Layout）滚动，避免双重滚动条 */
 .page-container {
-  padding: 16px;
-  height: 100%;
-  overflow-y: auto;
+  padding: 12px 16px;
+  min-height: 100%;
 }
 
 .card {
-  background: #fff;
-  border-radius: 8px;
-  padding: 16px;
-  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.06);
+  background: var(--card);
+  border: 1px solid var(--card-border);
+  border-radius: 14px;
+  padding: 12px 14px;
+  box-shadow: var(--card-shadow);
 }
 
 .flex-between {
@@ -44,17 +252,670 @@ html, body, #app {
   align-items: center;
 }
 
-.mb-12 { margin-bottom: 12px; }
-.mt-12 { margin-top: 12px; }
+.mb-12 { margin-bottom: 10px; }
+.mt-12 { margin-top: 10px; }
 
-.text-muted { color: #909399; }
-.text-success { color: #67c23a; }
-.text-danger { color: #f56c6c; }
-.text-warning { color: #e6a23c; }
+.text-muted { color: var(--ink-3); }
+.text-2 { color: var(--ink-2); }
+.text-success { color: var(--green); }
+.text-danger { color: var(--red); }
+.text-warning { color: var(--yellow); }
 
 .mono {
   font-family: 'Cascadia Code', Consolas, 'Courier New', monospace;
   font-size: 12px;
   white-space: pre-wrap;
   word-break: break-all;
+}
+
+/* ---------- Element Plus 组件打磨 ---------- */
+/* 按钮：柔和投影 + 悬停微抬 */
+.el-button {
+  border-radius: 10px;
+  transition: transform .25s cubic-bezier(.16, 1, .3, 1),
+              box-shadow .25s ease,
+              background-color .2s ease,
+              border-color .2s ease,
+              color .2s ease;
+}
+.el-button--primary:not(.is-plain):not(.is-text):not(.is-link) {
+  box-shadow: 0 4px 12px var(--blue-glow);
+}
+.el-button--primary:not(.is-plain):not(.is-text):not(.is-link):hover {
+  transform: translateY(-1px);
+  box-shadow: 0 6px 16px var(--blue-glow-strong);
+}
+.el-button--primary:not(.is-plain):not(.is-text):not(.is-link):active {
+  transform: translateY(0);
+}
+
+/* 输入框：圆角 + 聚焦光晕 */
+.el-input__wrapper,
+.el-textarea__inner,
+.el-select__wrapper {
+  border-radius: 10px;
+}
+.el-input__wrapper,
+.el-select__wrapper {
+  transition: box-shadow .25s ease;
+}
+.el-input__wrapper.is-focus,
+.el-select__wrapper.is-focused {
+  box-shadow: 0 0 0 1px var(--el-color-primary) inset, 0 0 0 3px var(--blue-focus);
+}
+
+/* 标签：胶囊 */
+.el-tag {
+  border-radius: 999px;
+}
+
+/* 对话框：大圆角与散影 */
+.el-dialog {
+  border-radius: var(--el-dialog-border-radius);
+  box-shadow: 0 24px 64px rgba(70, 72, 79, .18), 0 4px 18px rgba(70, 72, 79, .08);
+}
+.el-dialog__header {
+  padding-bottom: 8px;
+}
+.el-dialog__title {
+  font-weight: 600;
+  letter-spacing: .3px;
+}
+
+/* 消息：柔影胶囊 */
+.el-message {
+  border-radius: 12px;
+  border: 1px solid var(--el-border-color-lighter);
+  box-shadow: 0 8px 24px rgba(70, 72, 79, .12);
+}
+
+/* 表格：柔和表头、无生硬竖线、圆角 */
+.el-table {
+  border-radius: 12px;
+}
+.el-table th.el-table__cell {
+  font-weight: 600;
+  letter-spacing: .2px;
+  background-color: var(--el-table-header-bg-color);
+}
+
+/* ============================================================
+   主题 2：黑暗模式（dark）—— 简洁暗色，无特效
+   ============================================================ */
+:root[data-theme='dark'] {
+  /* 底色 / 面板 */
+  --paper: #1D1E24;
+  --paper-deep: #30313A;
+  --card: #26272E;
+  --line: #3A3B44;
+  --page-bg: #1D1E24;
+  --panel-2: #26272E;
+  --hover-bg: #30313A;
+  --header-bg: rgba(29, 31, 38, .82);
+  --aside-bg: #222329;
+  --card-border: rgba(90, 92, 104, .5);
+  --card-shadow: 0 1px 2px rgba(0, 0, 0, .30), 0 10px 28px rgba(0, 0, 0, .45);
+  --card-shadow-hover: 0 2px 4px rgba(0, 0, 0, .40), 0 16px 36px rgba(0, 0, 0, .55);
+
+  /* 文字 */
+  --ink: #E6E7EC;
+  --ink-2: #A2A5B0;
+  --ink-3: #8B8F9A;
+
+  /* 语义色（提亮保证对比度） */
+  --blue: #6C9FD6;
+  --blue-deep: #8DB6E0;
+  --blue-soft: #2F3B4E;
+  --pink: #D294A3;
+  --pink-soft: #3A2E33;
+  --yellow: #D0A85C;
+  --yellow-soft: #3A3226;
+  --green: #7FBA96;
+  --green-soft: #2A3A30;
+  --red: #D98B93;
+  --red-soft: #3A2C2E;
+  --violet: #A88FD0;
+
+  /* 终端 / 输出 */
+  --terminal-bg: #14151A;
+  --terminal-fg: #C7CBD4;
+  --terminal-accent: #6C9FD6;
+  --err-fg: #E5979D;
+
+  /* 杂项 */
+  --stat-grad-1: #25303E;
+  --stat-grad-2: #23332A;
+  --stat-grad-3: #33272A;
+  --sel-thumb: #4A4B55;
+  --sel-thumb-hover: #5A5B66;
+  --halo-1: rgba(108, 159, 214, .14);
+  --halo-2: rgba(210, 148, 163, .12);
+  --blue-glow: rgba(108, 159, 214, .30);
+  --blue-glow-strong: rgba(108, 159, 214, .40);
+  --blue-focus: rgba(108, 159, 214, .20);
+  --blue-soft-glow: rgba(108, 159, 214, .18);
+
+  /* Element Plus：主色 */
+  --el-color-primary: #6C9FD6;
+  --el-color-primary-light-3: #547FAE;
+  --el-color-primary-light-5: #456791;
+  --el-color-primary-light-7: #374F77;
+  --el-color-primary-light-8: #2D4466;
+  --el-color-primary-light-9: #263A58;
+  --el-color-primary-dark-2: #8CB8E2;
+  --el-color-success: #7FBA96;
+  --el-color-success-light-3: #669477;
+  --el-color-success-light-5: #537A62;
+  --el-color-success-light-7: #42614E;
+  --el-color-success-light-8: #395444;
+  --el-color-success-light-9: #324836;
+  --el-color-success-dark-2: #9ACEAF;
+  --el-color-warning: #D0A85C;
+  --el-color-warning-light-3: #A9884B;
+  --el-color-warning-light-5: #886C3C;
+  --el-color-warning-light-7: #6B542F;
+  --el-color-warning-light-8: #5B4628;
+  --el-color-warning-light-9: #4E3D23;
+  --el-color-warning-dark-2: #E0BC7F;
+  --el-color-danger: #D98B93;
+  --el-color-danger-light-3: #AE6F76;
+  --el-color-danger-light-5: #905C63;
+  --el-color-danger-light-7: #734A50;
+  --el-color-danger-light-8: #613E44;
+  --el-color-danger-light-9: #533A3E;
+  --el-color-danger-dark-2: #E7A4AB;
+  --el-color-error: #D98B93;
+  --el-color-error-light-3: #AE6F76;
+  --el-color-error-light-5: #905C63;
+  --el-color-error-light-7: #734A50;
+  --el-color-error-light-8: #613E44;
+  --el-color-error-light-9: #533A3E;
+  --el-color-error-dark-2: #E7A4AB;
+  --el-color-info: #A2A5B0;
+  --el-color-info-light-3: #838690;
+  --el-color-info-light-5: #6B6D76;
+  --el-color-info-light-7: #52545C;
+  --el-color-info-light-8: #45474E;
+  --el-color-info-light-9: #3B3C43;
+  --el-color-info-dark-2: #B8BBC2;
+
+  /* Element Plus：基础 */
+  --el-text-color-primary: #E6E7EC;
+  --el-text-color-regular: #D2D4DA;
+  --el-text-color-secondary: #A2A5B0;
+  --el-text-color-placeholder: #6F7380;
+  --el-text-color-disabled: #565A63;
+  --el-border-color: #3A3B44;
+  --el-border-color-light: #35363E;
+  --el-border-color-lighter: #30313A;
+  --el-border-color-extra-light: #2B2C34;
+  --el-bg-color: #26272E;
+  --el-bg-color-page: #1D1E24;
+  --el-bg-color-overlay: #2A2B33;
+  --el-fill-color: #30313A;
+  --el-fill-color-light: #33343C;
+  --el-fill-color-lighter: #36373F;
+  --el-fill-color-extra-light: #2D2E36;
+  --el-fill-color-dark: #26272E;
+  --el-fill-color-darker: #222329;
+  /* EP 输入框/下拉/表/树等的默认底色是 --el-fill-color-blank（默认 #fff），必须覆盖，否则恒白 */
+  --el-fill-color-blank: #26272E;
+  /* v-loading 遮罩（EP 默认白色 90%，暗色下会变白纱） */
+  --el-mask-color: rgba(0, 0, 0, .55);
+  --el-mask-color-extra-light: rgba(0, 0, 0, .25);
+  color-scheme: dark;
+  --el-box-shadow: 0 8px 24px rgba(0, 0, 0, .50), 0 2px 6px rgba(0, 0, 0, .40);
+  --el-box-shadow-light: 0 4px 14px rgba(0, 0, 0, .40);
+  --el-box-shadow-lighter: 0 2px 10px rgba(0, 0, 0, .30);
+  --el-table-header-text-color: #A2A5B0;
+}
+
+/* EP 表格在 .el-table 元素级重定义了 --el-table-*（链接到 blank），写在 :root 无效，需针对元素覆盖 */
+:root[data-theme='dark'] .el-table {
+  --el-table-border-color: #32333B;
+  --el-table-header-bg-color: #2E2F37;
+  --el-table-row-hover-bg-color: #2D2E36;
+  --el-table-bg-color: #26272E;
+  --el-table-tr-bg-color: #26272E;
+}
+
+/* 暗色下对话框/消息阴影加深 */
+:root[data-theme='dark'] .el-dialog {
+  box-shadow: 0 24px 64px rgba(0, 0, 0, .55), 0 4px 18px rgba(0, 0, 0, .35);
+}
+:root[data-theme='dark'] .el-message {
+  box-shadow: 0 8px 24px rgba(0, 0, 0, .50);
+}
+
+/* ============================================================
+   主题 3：赛博朋克（cyber）—— 暗底霓虹 / 玻璃面板 / 发光描边
+   ============================================================ */
+:root[data-theme='cyber'] {
+  /* 底色 */
+  --page-bg: #070A12;
+  --paper: #070A12;
+  --paper-deep: #0B0F1A;
+  --card: rgba(13, 18, 32, .62);
+  --line: rgba(33, 230, 255, .18);
+  --panel-2: rgba(10, 14, 24, .66);
+  --hover-bg: rgba(33, 230, 255, .10);
+  --header-bg: rgba(8, 12, 22, .62);
+  --aside-bg: rgba(8, 12, 22, .55);
+  --card-border: rgba(33, 230, 255, .26);
+  --card-shadow: 0 0 12px -6px rgba(33, 230, 255, .50), 0 8px 30px rgba(0, 0, 0, .45);
+  --card-shadow-hover: 0 0 14px -4px rgba(33, 230, 255, .70), 0 0 30px -8px rgba(255, 62, 165, .50), 0 16px 36px rgba(0, 0, 0, .55);
+
+  /* 文字 */
+  --ink: #E8EDFF;
+  --ink-2: #8A94B8;
+  --ink-3: #5C6485;
+
+  /* 霓虹语义色 */
+  --blue: #21E6FF;
+  --blue-deep: #7DEAFF;
+  --blue-soft: rgba(33, 230, 255, .12);
+  --pink: #FF3EA5;
+  --pink-soft: rgba(255, 62, 165, .12);
+  --yellow: #FFB020;
+  --yellow-soft: rgba(255, 176, 32, .12);
+  --green: #00FFA3;
+  --green-soft: rgba(0, 255, 163, .10);
+  --red: #FF4D6D;
+  --red-soft: rgba(255, 77, 109, .12);
+  --violet: #B14EFF;
+
+  /* 终端 */
+  --terminal-bg: #070B13;
+  --terminal-fg: #C7F9FF;
+  --terminal-accent: #21E6FF;
+  --err-fg: #FF7088;
+
+  /* 杂项 */
+  --stat-grad-1: #10202E;
+  --stat-grad-2: #0E2A1E;
+  --stat-grad-3: #2A1620;
+  --sel-thumb: #1E2A44;
+  --sel-thumb-hover: #2A3A5C;
+  --halo-1: rgba(33, 230, 255, .16);
+  --halo-2: rgba(255, 62, 165, .14);
+  --blue-glow: rgba(33, 230, 255, .35);
+  --blue-glow-strong: rgba(33, 230, 255, .50);
+  --blue-focus: rgba(33, 230, 255, .25);
+  --blue-soft-glow: rgba(33, 230, 255, .16);
+
+  /* Element Plus：主色（霓虹） */
+  --el-color-primary: #21E6FF;
+  --el-color-primary-light-3: #12B8D4;
+  --el-color-primary-light-5: #0F97B0;
+  --el-color-primary-light-7: #0C7990;
+  --el-color-primary-light-8: #0B6878;
+  --el-color-primary-light-9: #0A5A64;
+  --el-color-primary-dark-2: #54EDFF;
+  --el-color-success: #00FFA3;
+  --el-color-success-light-3: #12C985;
+  --el-color-success-light-5: #0FA76F;
+  --el-color-success-light-7: #0D8A5D;
+  --el-color-success-light-8: #0D7A52;
+  --el-color-success-light-9: #0C6A48;
+  --el-color-success-dark-2: #4DFFC0;
+  --el-color-warning: #FFB020;
+  --el-color-warning-light-3: #D59422;
+  --el-color-warning-light-5: #B0781C;
+  --el-color-warning-light-7: #8E6116;
+  --el-color-warning-light-8: #7A5312;
+  --el-color-warning-light-9: #6B480F;
+  --el-color-warning-dark-2: #FFC84D;
+  --el-color-danger: #FF4D6D;
+  --el-color-danger-light-3: #D9435F;
+  --el-color-danger-light-5: #B33950;
+  --el-color-danger-light-7: #903045;
+  --el-color-danger-light-8: #79293B;
+  --el-color-danger-light-9: #672534;
+  --el-color-danger-dark-2: #FF7088;
+  --el-color-error: #FF4D6D;
+  --el-color-error-light-3: #D9435F;
+  --el-color-error-light-5: #B33950;
+  --el-color-error-light-7: #903045;
+  --el-color-error-light-8: #79293B;
+  --el-color-error-light-9: #672534;
+  --el-color-error-dark-2: #FF7088;
+  --el-color-info: #8A94B8;
+  --el-color-info-light-3: #727C9C;
+  --el-color-info-light-5: #5C6583;
+  --el-color-info-light-7: #48506B;
+  --el-color-info-light-8: #3C4359;
+  --el-color-info-light-9: #343A4C;
+  --el-color-info-dark-2: #A6AFD0;
+
+  /* Element Plus：基础 */
+  --el-text-color-primary: #E8EDFF;
+  --el-text-color-regular: #C6CCE4;
+  --el-text-color-secondary: #8A94B8;
+  --el-text-color-placeholder: #5F6786;
+  --el-text-color-disabled: #4A5168;
+  --el-border-color: rgba(33, 230, 255, .22);
+  --el-border-color-light: rgba(33, 230, 255, .16);
+  --el-border-color-lighter: rgba(33, 230, 255, .12);
+  --el-border-color-extra-light: rgba(33, 230, 255, .08);
+  --el-bg-color: rgba(13, 18, 32, .66);
+  --el-bg-color-page: #070A12;
+  --el-bg-color-overlay: rgba(16, 22, 38, .96);
+  --el-fill-color: rgba(33, 230, 255, .12);
+  --el-fill-color-light: rgba(33, 230, 255, .10);
+  --el-fill-color-lighter: rgba(33, 230, 255, .08);
+  --el-fill-color-extra-light: rgba(33, 230, 255, .06);
+  --el-fill-color-dark: rgba(33, 230, 255, .16);
+  --el-fill-color-darker: rgba(33, 230, 255, .18);
+  /* EP 输入框/下拉/表/树等的默认底色，必须覆盖否则恒白（留一点透明以透出网格/噪点） */
+  --el-fill-color-blank: rgba(10, 14, 24, .72);
+  /* v-loading 遮罩 */
+  --el-mask-color: rgba(0, 0, 0, .60);
+  --el-mask-color-extra-light: rgba(0, 0, 0, .30);
+  color-scheme: dark;
+  --el-box-shadow: 0 8px 24px rgba(0, 0, 0, .60), 0 0 20px -8px rgba(33, 230, 255, .35);
+  --el-box-shadow-light: 0 4px 14px rgba(0, 0, 0, .50);
+  --el-box-shadow-lighter: 0 2px 10px rgba(0, 0, 0, .40);
+  --el-table-header-text-color: #8A94B8;
+}
+
+/* EP 表格元素级重定义 --el-table-*，需针对元素覆盖 */
+:root[data-theme='cyber'] .el-table {
+  --el-table-border-color: rgba(33, 230, 255, .14);
+  --el-table-header-bg-color: rgba(13, 18, 32, .90);
+  --el-table-row-hover-bg-color: rgba(33, 230, 255, .06);
+  --el-table-bg-color: rgba(13, 18, 32, .55);
+  --el-table-tr-bg-color: rgba(13, 18, 32, .55);
+}
+
+/* ============================================================
+   赛博朋克特效层（cyber）
+   层叠策略：html 底色 → body 多层背景（网格/光斑/地平面）
+            → #app 透空 → 内容/玻璃面板 → CRT 噪点 → 数据流
+   ============================================================ */
+
+/* #app 透空：网格/光斑不再被不透明白底盖住，玻璃拟态才有可模糊的内容 */
+:root[data-theme='cyber'] #app {
+  background: transparent;
+}
+
+/* body 多层背景：先给深色兜底，再叠网格/光斑，防止旧版 WebView2 合成失败时背景惨白 */
+:root[data-theme='cyber'] body {
+  background-color: #05070D;
+  background-image:
+    /* 右上青色光斑 */
+    radial-gradient(46vw 46vw at 84% 4%, rgba(33, 230, 255, .16), transparent 62%),
+    /* 左下洋红光斑 */
+    radial-gradient(46vw 46vw at 5% 96%, rgba(255, 62, 165, .14), transparent 62%),
+    /* 底部地平线霓虹辉光（2077 城市天际线感） */
+    radial-gradient(90vw 28vh at 50% 102%, rgba(33, 230, 255, .20), transparent 72%),
+    /* 网格：96px 粗线 + 24px 细线 */
+    linear-gradient(rgba(33, 230, 255, .05) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(33, 230, 255, .05) 1px, transparent 1px),
+    linear-gradient(rgba(33, 230, 255, .15) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(33, 230, 255, .15) 1px, transparent 1px);
+  background-size:
+    100vw 100vh, 100vw 100vh, 100vw 100vh,
+    96px 96px, 96px 96px, 24px 24px, 24px 24px;
+  background-repeat:
+    no-repeat, no-repeat, no-repeat,
+    repeat, repeat, repeat, repeat;
+  background-attachment: fixed;
+}
+
+/* 布局兜底：防止 WebView2 玻璃拟态失效时侧栏/顶栏/主体变成白底 */
+:root[data-theme='cyber'] .layout,
+:root[data-theme='cyber'] .el-main,
+:root[data-theme='cyber'] .main {
+  background: transparent;
+}
+:root[data-theme='cyber'] .aside {
+  background: rgba(8, 12, 22, .90);
+}
+:root[data-theme='cyber'] .header {
+  background: rgba(8, 12, 22, .90);
+}
+@supports (backdrop-filter: blur(12px)) {
+  :root[data-theme='cyber'] .aside {
+    background: var(--aside-bg);
+    backdrop-filter: blur(14px);
+    -webkit-backdrop-filter: blur(14px);
+  }
+  :root[data-theme='cyber'] .header {
+    background: var(--header-bg);
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+  }
+}
+
+/* CRT 屏噪点 + 细扫描线（盖在最上，如全息屏玻璃面） */
+:root[data-theme='cyber'] body::after {
+  content: '';
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  pointer-events: none;
+  opacity: .05;
+  background-image:
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='120' height='120'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='120' height='120' filter='url(%23n)' opacity='1'/%3E%3C/svg%3E"),
+    repeating-linear-gradient(180deg, transparent 0 2px, rgba(0, 255, 255, .025) 2px 3px);
+  background-size: 220px 220px, 100% 3px;
+}
+
+/* 数据流：三束霓虹数据线自上而下划过屏幕 */
+:root[data-theme='cyber'] body::before {
+  content: '';
+  position: fixed;
+  left: 0;
+  right: 0;
+  top: 0;
+  height: 30vh;
+  z-index: 1500;
+  pointer-events: none;
+  opacity: 0;
+  background: linear-gradient(90deg,
+    transparent 18%, rgba(33, 230, 255, .05) 20%, rgba(33, 230, 255, .14) 21%, transparent 23%,
+    transparent 46%, rgba(255, 62, 165, .05) 48%, rgba(255, 62, 165, .14) 49%, transparent 51%,
+    transparent 72%, rgba(255, 224, 84, .04) 74%, rgba(255, 224, 84, .12) 75%, transparent 77%);
+  animation: cyberdata 16s linear infinite;
+}
+@keyframes cyberdata {
+  0%   { transform: translateY(-32vh); opacity: 0; }
+  6%   { opacity: .7; }
+  94%  { opacity: .7; }
+  100% { transform: translateY(112vh); opacity: 0; }
+}
+
+/* 玻璃拟态面板：卡片 / 对话框 / 消息 */
+:root[data-theme='cyber'] .card,
+:root[data-theme='cyber'] .el-dialog,
+:root[data-theme='cyber'] .el-message,
+:root[data-theme='cyber'] .el-message-box {
+  background: rgba(13, 18, 32, .95);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+}
+@supports (backdrop-filter: blur(12px)) {
+  :root[data-theme='cyber'] .card,
+  :root[data-theme='cyber'] .el-dialog,
+  :root[data-theme='cyber'] .el-message,
+  :root[data-theme='cyber'] .el-message-box {
+    background: var(--card);
+  }
+}
+
+/* 卡片：霓虹描边 + 外发光 + HUD 角标 */
+:root[data-theme='cyber'] .card {
+  position: relative;
+  border-color: rgba(33, 230, 255, .28);
+  box-shadow:
+    0 0 10px -5px rgba(33, 230, 255, .60),
+    0 0 26px -8px rgba(255, 62, 165, .45),
+    0 8px 30px rgba(0, 0, 0, .50);
+}
+:root[data-theme='cyber'] .card::before,
+:root[data-theme='cyber'] .card::after {
+  content: '';
+  position: absolute;
+  width: 12px;
+  height: 12px;
+  pointer-events: none;
+  box-shadow: 0 0 6px currentColor;
+}
+:root[data-theme='cyber'] .card::before {
+  top: -1px;
+  left: -1px;
+  border-top: 2px solid #21E6FF;
+  border-left: 2px solid #21E6FF;
+  color: #21E6FF;
+}
+:root[data-theme='cyber'] .card::after {
+  bottom: -1px;
+  right: -1px;
+  border-bottom: 2px solid #FF3EA5;
+  border-right: 2px solid #FF3EA5;
+  color: #FF3EA5;
+}
+
+/* 标题：霓虹渐变发光文字 + 轻微故障闪烁 */
+:root[data-theme='cyber'] .card-title,
+:root[data-theme='cyber'] .header-title,
+:root[data-theme='cyber'] .logo h2 {
+  color: #BFF6FF;
+  text-shadow:
+    0 0 8px rgba(33, 230, 255, .85),
+    0 0 22px rgba(33, 230, 255, .50),
+    0 0 44px rgba(33, 230, 255, .28);
+  animation: cyber-flicker 7s linear infinite;
+}
+:root[data-theme='cyber'] .header-title::before {
+  background: linear-gradient(180deg, #21E6FF, #FF3EA5);
+  box-shadow: 0 0 8px rgba(33, 230, 255, .95);
+}
+/* 统计大数字：洋红+青双重发光 */
+:root[data-theme='cyber'] .stat-card .num {
+  text-shadow: 0 0 10px rgba(33, 230, 255, .9), 0 0 28px rgba(255, 62, 165, .55);
+}
+@keyframes cyber-flicker {
+  0%, 100% { opacity: 1; }
+  92%      { opacity: 1; }
+  93%      { opacity: .72; }
+  94%      { opacity: 1; }
+  97%      { opacity: .86; }
+  98%      { opacity: 1; }
+}
+
+/* 主按钮：霓虹渐变 + 光晕 */
+:root[data-theme='cyber'] .el-button--primary:not(.is-plain):not(.is-text):not(.is-link) {
+  background: linear-gradient(135deg, #0FD3EE, #21E6FF 45%, #7B4CFF);
+  border-color: rgba(33, 230, 255, .80);
+  color: #001822;
+  font-weight: 600;
+  box-shadow: 0 0 8px rgba(33, 230, 255, .70), 0 4px 16px rgba(33, 230, 255, .25);
+}
+:root[data-theme='cyber'] .el-button--primary:not(.is-plain):not(.is-text):not(.is-link):hover {
+  box-shadow: 0 0 16px rgba(33, 230, 255, 1), 0 6px 20px rgba(33, 230, 255, .40);
+}
+
+/* 表格：表头霓虹字 + 行悬停青色底 */
+:root[data-theme='cyber'] .el-table th.el-table__cell {
+  color: #7DEAFF;
+  font-weight: 600;
+  letter-spacing: .5px;
+  text-shadow: 0 0 6px rgba(33, 230, 255, .5);
+}
+:root[data-theme='cyber'] .el-table__row:hover > td.el-table__cell {
+  background: rgba(33, 230, 255, .08) !important;
+}
+:root[data-theme='cyber'] .el-checkbox__inner {
+  border-color: rgba(33, 230, 255, .5);
+}
+
+/* 输入/下拉：暗色玻璃底 + 聚焦青色外发光 */
+:root[data-theme='cyber'] .el-input__wrapper,
+:root[data-theme='cyber'] .el-select__wrapper,
+:root[data-theme='cyber'] .el-textarea__inner {
+  background: rgba(10, 14, 24, .72);
+  box-shadow: 0 0 0 1px rgba(33, 230, 255, .22) inset;
+}
+:root[data-theme='cyber'] .el-input__wrapper.is-focus,
+:root[data-theme='cyber'] .el-select__wrapper.is-focused,
+:root[data-theme='cyber'] .el-textarea__inner:focus {
+  box-shadow:
+    0 0 0 1px #21E6FF inset,
+    0 0 0 3px rgba(33, 230, 255, .22),
+    0 0 14px rgba(33, 230, 255, .35);
+}
+
+/* 对话框 / 消息：霓虹描边 */
+:root[data-theme='cyber'] .el-dialog,
+:root[data-theme='cyber'] .el-message,
+:root[data-theme='cyber'] .el-message-box {
+  border: 1px solid rgba(33, 230, 255, .30);
+  box-shadow: 0 0 18px -6px rgba(33, 230, 255, .60), 0 20px 50px rgba(0, 0, 0, .60);
+}
+
+/* 激活菜单：渐变底 + 故障帧条 */
+:root[data-theme='cyber'] .el-menu-item.is-active {
+  background: linear-gradient(90deg, rgba(33, 230, 255, .16), rgba(33, 230, 255, .02));
+  color: #5DF2FF;
+  box-shadow: inset 0 0 14px rgba(33, 230, 255, .18), 0 0 12px -2px rgba(33, 230, 255, .60);
+}
+:root[data-theme='cyber'] .el-menu-item.is-active::before {
+  height: 20px;
+  background: linear-gradient(180deg, #21E6FF, #7B4CFF);
+  box-shadow: 0 0 10px rgba(33, 230, 255, .95), 0 0 22px rgba(123, 76, 255, .60);
+  animation: glitch-bar .5s steps(2, end) infinite;
+}
+:root[data-theme='cyber'] .el-menu-item:hover {
+  background: rgba(33, 230, 255, .08);
+}
+@keyframes glitch-bar {
+  0%, 100% { clip-path: inset(0 0 0 0); }
+  25%      { clip-path: inset(25% 0 40% 0); }
+  60%      { clip-path: inset(10% 0 65% 0); }
+}
+
+/* 滚动条：青色霓虹渐变 */
+:root[data-theme='cyber'] ::-webkit-scrollbar-thumb {
+  background: linear-gradient(180deg, #0FD3EE, #21E6FF 55%, #7B4CFF);
+  box-shadow: inset 0 0 6px rgba(0, 0, 0, .35), 0 0 6px rgba(33, 230, 255, .50);
+}
+
+/* 终端 tab 激活条霓虹 */
+:root[data-theme='cyber'] .term-tab.active::before {
+  box-shadow: 0 0 10px rgba(33, 230, 255, .9);
+}
+
+/* 解锁页：背景透空 + 霓虹玻璃卡 */
+:root[data-theme='cyber'] .unlock-wrap {
+  background: transparent;
+}
+:root[data-theme='cyber'] .unlock-card {
+  background: rgba(10, 14, 24, .62);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border: 1px solid rgba(33, 230, 255, .35);
+  box-shadow: 0 0 22px -6px rgba(33, 230, 255, .60), 0 24px 60px rgba(0, 0, 0, .60);
+}
+:root[data-theme='cyber'] .brand {
+  color: #BFF6FF;
+  text-shadow: 0 0 8px rgba(33, 230, 255, .85), 0 0 24px rgba(33, 230, 255, .50);
+}
+
+/* 终端页面：玻璃化背景，透出网格 */
+:root[data-theme='cyber'] .terminal-page,
+:root[data-theme='cyber'] .term-toolbar,
+:root[data-theme='cyber'] .term-tabs {
+  background-color: rgba(7, 11, 19, .66);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+}
+
+/* ---------- 动效降级（系统偏好） ---------- */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: .001s !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: .001s !important;
+  }
 }

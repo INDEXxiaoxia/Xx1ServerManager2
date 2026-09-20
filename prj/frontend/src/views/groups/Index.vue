@@ -6,9 +6,9 @@ import {api} from '@/api'
 const list = ref([])
 const dialogVisible = ref(false)
 const editing = ref(null)
-const form = reactive({id: '', name: '', description: '', color: '#667eea'})
+const form = reactive({id: '', name: '', description: '', color: '#5780A9'})
 
-const colors = ['#667eea', '#764ba2', '#67c23a', '#e6a23c', '#f56c6c', '#409eff', '#909399', '#13c2c2']
+const colors = ['#5780A9', '#C58A98', '#C79E4F', '#67947A', '#8F919B', '#9B7FB8', '#6FAE9F', '#D08770']
 
 async function load() {
   list.value = await api.listGroups()
@@ -16,11 +16,11 @@ async function load() {
 onMounted(load)
 
 function openAdd() {
-  Object.assign(form, {id: '', name: '', description: '', color: '#667eea'})
+  Object.assign(form, {id: '', name: '', description: '', color: '#5780A9'})
   dialogVisible.value = true
 }
 function openEdit(g) {
-  Object.assign(form, {id: g.id, name: g.name, description: g.description, color: g.color || '#667eea'})
+  Object.assign(form, {id: g.id, name: g.name, description: g.description, color: g.color || '#5780A9'})
   dialogVisible.value = true
 }
 
@@ -50,7 +50,7 @@ async function remove(g) {
       <el-table :data="list" stripe>
         <el-table-column label="颜色" width="80">
           <template #default="{row}">
-            <span class="color-dot" :style="{background: row.color || '#667eea'}" />
+            <span class="color-dot" :style="{background: row.color || '#5780A9'}" />
           </template>
         </el-table-column>
         <el-table-column prop="name" label="名称" min-width="140" />
@@ -98,7 +98,7 @@ async function remove(g) {
   border: 2px solid transparent;
 }
 .color-picker .color-dot.active {
-  border-color: #303133;
-  transform: scale(1.15);
+  border-color: transparent;
+  box-shadow: 0 0 0 3px var(--card), 0 0 0 5px var(--ink-2);
 }
 </style>

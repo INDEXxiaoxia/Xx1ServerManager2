@@ -28,7 +28,7 @@ const filtered = computed(() => {
   let rows = [...list.value]
   if (keyword.value) {
     const k = keyword.value.toLowerCase()
-    rows = rows.filter(r => r.name.toLowerCase().includes(k) || r.host.toLowerCase().includes(k))
+    rows = rows.filter(r => (r.name || '').toLowerCase().includes(k) || (r.host || '').toLowerCase().includes(k))
   }
   if (groupFilter.value) {
     rows = rows.filter(r => (r.groupIds || []).includes(groupFilter.value))
@@ -191,6 +191,6 @@ function handleMore(command, row) {
   margin-left: 0;
 }
 .more-btn {
-  color: #909399;
+  color: var(--ink-3);
 }
 </style>

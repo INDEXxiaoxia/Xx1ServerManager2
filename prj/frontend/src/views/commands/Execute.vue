@@ -24,9 +24,9 @@ async function load() {
 onMounted(load)
 
 function getServerGroupColor(server) {
-  if (!server.groupIds || !server.groupIds.length) return '#dcdfe6'
+  if (!server.groupIds || !server.groupIds.length) return 'var(--ink-3)'
   const g = groups.value.find(x => x.id === server.groupIds[0])
-  return g?.color || '#dcdfe6'
+  return g?.color || 'var(--ink-3)'
 }
 
 function usePreset(p) {
@@ -190,7 +190,25 @@ onBeforeUnmount(() => {
   height: calc(100vh - 160px);
 }
 .right-panel { flex: 1; min-width: 0; }
-.card-title { font-size: 15px; margin: 0; }
+.card-title {
+  position: relative;
+  display: inline-block;
+  padding-left: 12px;
+  font-size: 16px;
+  font-weight: 600;
+  margin: 0;
+}
+.card-title::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 3px;
+  height: 14px;
+  border-radius: 999px;
+  background: linear-gradient(180deg, var(--blue), var(--pink));
+}
 .tag-item { margin-right: 8px; margin-bottom: 4px; }
 .server-tag {
   margin-right: 8px;
@@ -199,20 +217,20 @@ onBeforeUnmount(() => {
 }
 .mr-1 { margin-right: 8px; }
 .output-card {
-  border: 1px solid #ebeef5;
-  border-radius: 8px;
-  padding: 12px;
-  background: #fafafa;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  padding: 12px 14px;
+  background: var(--panel-2);
 }
 .server-name { font-weight: 600; }
 .output-text {
   margin-top: 8px;
-  background: #1e1e1e;
-  color: #d4d4d4;
-  border-radius: 6px;
-  padding: 8px;
+  background: var(--terminal-bg);
+  color: var(--terminal-fg);
+  border-radius: 10px;
+  padding: 10px 12px;
   max-height: 180px;
   overflow-y: auto;
 }
-.output-text.err { color: #f87171; }
+.output-text.err { color: var(--err-fg); }
 </style>

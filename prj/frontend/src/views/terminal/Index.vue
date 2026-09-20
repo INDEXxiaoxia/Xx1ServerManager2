@@ -1,11 +1,12 @@
 <script setup>
-import {ref, onMounted, onBeforeUnmount, nextTick} from 'vue'
+import {ref, watch, onMounted, onBeforeUnmount, nextTick} from 'vue'
 import {useRoute} from 'vue-router'
 import {ElMessage} from 'element-plus'
 import {Terminal} from 'xterm'
 import {FitAddon} from '@xterm/addon-fit'
 import 'xterm/css/xterm.css'
 import {api, events} from '@/api'
+import {themeState, getTerminalTheme} from '@/theme'
 
 const route = useRoute()
 const servers = ref([])
@@ -38,7 +39,7 @@ async function initTerminal(key) {
     fontSize: 13,
     fontFamily: 'Cascadia Code, Consolas, monospace',
     cursorBlink: true,
-    theme: {background: '#1e1e1e', foreground: '#d4d4d4'}
+    theme: getTerminalTheme(themeState.name)
   })
   const fit = new FitAddon()
   term.loadAddon(fit)
@@ -107,6 +108,14 @@ async function confirmAdd() {
   openNew(selectedServer.value)
 }
 
+// 主题切换：对已打开的终端会话即时应用新配色
+watch(() => themeState.name, () => {
+  const t = getTerminalTheme(themeState.name)
+  terms.forEach(term => {
+    term.options.theme = t
+  })
+})
+
 onMounted(async () => {
   await loadServers()
   addTab()
@@ -156,34 +165,48 @@ onBeforeUnmount(() => {
   height: 100%;
   display: flex;
   flex-direction: column;
-  background: #1e1e1e;
+  background: var(--terminal-bg);
 }
 .term-toolbar {
   padding: 8px 12px;
-  background: #252526;
-  border-bottom: 1px solid #333;
+  background: var(--terminal-bg);
+  border-bottom: 1px solid var(--line);
 }
 .term-tabs {
   display: flex;
-  background: #2d2d30;
+  background: var(--panel-2);
   overflow-x: auto;
 }
 .term-tab {
+  position: relative;
   display: flex;
   align-items: center;
   gap: 6px;
   padding: 8px 14px;
   cursor: pointer;
-  color: #ccc;
-  border-right: 1px solid #333;
+  color: var(--ink-2);
+  border-right: 1px solid var(--line);
   user-select: none;
+  transition: background-color .2s ease, color .2s ease;
+}
+.term-tab:hover {
+  color: var(--ink);
 }
 .term-tab.active {
-  background: #1e1e1e;
-  color: #fff;
+  background: var(--terminal-bg);
+  color: var(--ink);
+}
+.term-tab.active::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 2px;
+  background: var(--blue);
 }
 .term-tab .tab-title { font-size: 13px; max-width: 160px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.term-tab .tab-close:hover { color: #f56c6c; }
+.term-tab .tab-close:hover { color: var(--red); }
 .term-body {
   flex: 1;
   position: relative;

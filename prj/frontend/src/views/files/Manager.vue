@@ -268,6 +268,6 @@ onBeforeUnmount(() => {
 
 <style scoped>
 .path { margin-left: 4px; }
-.file-name { cursor: pointer; }
-.file-name:hover { color: #409eff; }
+.file-name { cursor: pointer; transition: color .2s ease; }
+.file-name:hover { color: var(--blue); }
 </style>

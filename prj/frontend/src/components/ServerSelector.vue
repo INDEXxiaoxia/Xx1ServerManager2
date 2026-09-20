@@ -49,12 +49,14 @@ const treeProps = {children: 'children', label: 'label'}
 
 const treeData = computed(() => {
   const data = []
-  const ungrouped = servers.value.filter(s => !s.groupIds || !s.groupIds.length)
+  const svs = servers.value || []
+  const grps = groups.value || []
+  const ungrouped = svs.filter(s => !s.groupIds || !s.groupIds.length)
   if (ungrouped.length) {
     data.push({id: 'ungrouped', label: '未分组', type: 'group', children: ungrouped.map(toNode)})
   }
-  groups.value.forEach(g => {
-    const gs = servers.value.filter(s => (s.groupIds || []).includes(g.id))
+  grps.forEach(g => {
+    const gs = svs.filter(s => (s.groupIds || []).includes(g.id))
     if (gs.length) data.push({id: g.id, label: `${g.name} (${gs.length})`, type: 'group', children: gs.map(toNode)})
   })
   return data
@@ -119,18 +121,24 @@ function filterNode(value, data) {
 .server-tree {
   flex: 1;
   overflow-y: auto;
-  border: 1px solid #ebeef5;
-  border-radius: 6px;
-  padding: 6px;
-  background: #fafafa;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  padding: 8px;
+  background: var(--panel-2);
 }
 .tree-node {
   display: flex;
   align-items: center;
   flex: 1;
   min-width: 0;
+  padding: 2px 4px;
+  border-radius: 8px;
+  transition: background-color .2s ease;
 }
-.node-icon { margin-right: 4px; color: #909399; }
+.tree-node:hover {
+  background: var(--fill-color);
+}
+.node-icon { margin-right: 4px; color: var(--ink-3); }
 .node-label {
   overflow: hidden;
   text-overflow: ellipsis;
@@ -139,7 +147,7 @@ function filterNode(value, data) {
 .server-info {
   margin-left: 6px;
   font-size: 12px;
-  color: #909399;
+  color: var(--ink-3);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;

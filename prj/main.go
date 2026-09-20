@@ -18,8 +18,8 @@ func main() {
 	// Create application with options
 	err := wails.Run(&options.App{
 		Title:  "Xx1ServerManager2",
-		Width:  1024,
-		Height: 768,
+		Width:  1280,
+		Height: 820,
 		AssetServer: &assetserver.Options{
 			Assets: assets,
 		},
