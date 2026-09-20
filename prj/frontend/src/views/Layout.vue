@@ -11,8 +11,7 @@ const menus = [
   {path: '/servers', title: '服务器列表', icon: 'Connection'},
   {path: '/monitor', title: '实时监控', icon: 'DataLine'},
   {path: '/files', title: '文件管理', icon: 'Folder'},
-  {path: '/upload', title: '批量上传', icon: 'Upload'},
-  {path: '/execute', title: '批量执行', icon: 'ScaleToOriginal'},
+  {path: '/batch', title: '批量操作', icon: 'Upload'},
   {path: '/services', title: '服务管理', icon: 'Setting'},
   {path: '/terminal', title: 'SSH 终端', icon: 'Monitor'},
   {path: '/groups', title: '分组管理', icon: 'FolderOpened'},
@@ -20,7 +19,12 @@ const menus = [
   {path: '/settings', title: '设置', icon: 'Tools'}
 ]
 
-const activeMenu = computed(() => route.path)
+// 子路由（如 /batch/upload）也要高亮对应的父级菜单
+const activeMenu = computed(() => {
+  const path = route.path
+  if (path.startsWith('/batch')) return '/batch'
+  return path
+})
 const currentTitle = computed(() => route.meta.title || 'Xx1ServerManager2')
 const asideWidth = computed(() => (collapsed.value ? '64px' : '200px'))
 
