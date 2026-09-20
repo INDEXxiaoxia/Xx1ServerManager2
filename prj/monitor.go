@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"time"
 
 	"github.com/wailsapp/wails/v2/pkg/runtime"
@@ -46,11 +47,25 @@ func (a *App) saveMonitorPoint(serverID string, stats map[string]any) {
 		DiskTotal: toI64(stats["diskTotal"]),
 		DiskUsed:  toI64(stats["diskUsed"]),
 		DiskUsage: toF64(stats["diskUsage"]),
+		DiskJSON:  disksJSON(stats["disks"]),
 		NetRx:     toI64(stats["netRx"]),
 		NetTx:     toI64(stats["netTx"]),
 		Timestamp: time.Now(),
 	}
 	_ = a.store.AddMonitorPoint(mp)
+}
+
+// disksJSON 把采集到的磁盘快照序列化为落库字符串；采集失败或为空时返回空串
+func disksJSON(v any) string {
+	disks, ok := v.([]models.DiskInfo)
+	if !ok || len(disks) == 0 {
+		return ""
+	}
+	b, err := json.Marshal(disks)
+	if err != nil {
+		return ""
+	}
+	return string(b)
 }
 
 // StartMonitor 启动服务器实时监控轮询

@@ -77,6 +77,37 @@ export function getChartTheme(name) {
   }
 }
 
+// ---------- 磁盘调色板 ----------
+// 每块磁盘固定一色：'/' 恒用第 1 色（与"磁盘"语义色一致），其余按挂载点字母序取后续颜色，
+// 保证同一挂载点在监控页列表、折线图、总览迷你条里颜色一致。
+const DISK_PALETTE = {
+  light: ['#C79E4F', '#5780A9', '#67947A', '#C58A98', '#9B7FB8', '#8F919B'],
+  dark: ['#D0A85C', '#6C9FD6', '#7FBA96', '#D294A3', '#A88FD0', '#8B8F9A'],
+  cyber: ['#FFB020', '#21E6FF', '#00FFA3', '#FF3EA5', '#A88FD0', '#7DEAFF']
+}
+
+// getDiskPalette 取指定主题的磁盘调色板（未知主题回退光明模式）
+export function getDiskPalette(name) {
+  return DISK_PALETTE[name] || DISK_PALETTE.light
+}
+
+// diskColorOf 按挂载点取稳定配色：mounts 为当前已知挂载点列表（/ 之外的按字母序排）
+export function diskColorOf(name, mount, mounts) {
+  const palette = getDiskPalette(name)
+  if (mount === '/') return palette[0]
+  const rest = (mounts || []).filter(m => m !== '/').slice().sort()
+  const i = rest.indexOf(mount)
+  return palette[(i < 0 ? 0 : i + 1) % palette.length]
+}
+
+// usageColor 使用率语义色：绿 → 黄 → 红（走主题变量，迷你条与进度条共用）
+export function usageColor(pct) {
+  const v = Number(pct) || 0
+  if (v >= 85) return 'var(--red)'
+  if (v >= 70) return 'var(--yellow)'
+  return 'var(--green)'
+}
+
 // ---------- xterm 终端主题配色（其余配色键由 xterm 默认补齐） ----------
 export function getTerminalTheme(name) {
   if (name === 'cyber') {

@@ -105,7 +105,8 @@ func (s *Store) init() error {
 			disk_usage REAL,
 			net_rx INTEGER,
 			net_tx INTEGER,
-			timestamp TEXT NOT NULL
+			timestamp TEXT NOT NULL,
+			disk_json TEXT
 		)`,
 		`CREATE TABLE IF NOT EXISTS command_history (
 			id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -129,7 +130,41 @@ func (s *Store) init() error {
 			return err
 		}
 	}
+	return s.migrate()
+}
+
+// migrate 幂等增量迁移：老库补 disk_json 列与查询索引。
+// 先查 PRAGMA 再决定是否 ALTER，重复启动不会报错；老库升级后历史数据照常可读。
+func (s *Store) migrate() error {
+	if !s.hasColumn("monitor_history", "disk_json") {
+		if _, err := s.db.Exec(`ALTER TABLE monitor_history ADD COLUMN disk_json TEXT`); err != nil &&
+			!strings.Contains(err.Error(), "duplicate column") {
+			return err
+		}
+	}
+	_, _ = s.db.Exec(`CREATE INDEX IF NOT EXISTS idx_monitor_history_server_id ON monitor_history(server_id, id DESC)`)
 	return nil
+}
+
+// hasColumn 判断表是否已有某列
+func (s *Store) hasColumn(table, column string) bool {
+	rows, err := s.db.Query(`PRAGMA table_info(` + table + `)`)
+	if err != nil {
+		return false
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var cid, notnull, pk int
+		var name, ctype string
+		var dflt sql.NullString
+		if err := rows.Scan(&cid, &name, &ctype, &notnull, &dflt, &pk); err != nil {
+			return false
+		}
+		if name == column {
+			return true
+		}
+	}
+	return false
 }
 
 func (s *Store) Close() error {
@@ -362,8 +397,8 @@ func (s *Store) AddMonitorPoint(mp *models.MonitorPoint) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	_, err := s.db.Exec(
-		`INSERT INTO monitor_history (server_id,cpu_usage,mem_total,mem_used,mem_usage,disk_total,disk_used,disk_usage,net_rx,net_tx,timestamp) VALUES (?,?,?,?,?,?,?,?,?,?,?)`,
-		mp.ServerID, mp.CPUUsage, mp.MemTotal, mp.MemUsed, mp.MemUsage, mp.DiskTotal, mp.DiskUsed, mp.DiskUsage, mp.NetRx, mp.NetTx, mp.Timestamp.Format(time.RFC3339),
+		`INSERT INTO monitor_history (server_id,cpu_usage,mem_total,mem_used,mem_usage,disk_total,disk_used,disk_usage,net_rx,net_tx,timestamp,disk_json) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`,
+		mp.ServerID, mp.CPUUsage, mp.MemTotal, mp.MemUsed, mp.MemUsage, mp.DiskTotal, mp.DiskUsed, mp.DiskUsage, mp.NetRx, mp.NetTx, mp.Timestamp.Format(time.RFC3339), nullableDiskJSON(mp.DiskJSON),
 	)
 	return err
 }
@@ -375,7 +410,7 @@ func (s *Store) GetMonitorHistory(serverID string, limit int) ([]models.MonitorP
 		limit = 100
 	}
 	rows, err := s.db.Query(
-		`SELECT id,server_id,cpu_usage,mem_total,mem_used,mem_usage,disk_total,disk_used,disk_usage,net_rx,net_tx,timestamp FROM monitor_history WHERE server_id=? ORDER BY id DESC LIMIT ?`,
+		`SELECT id,server_id,cpu_usage,mem_total,mem_used,mem_usage,disk_total,disk_used,disk_usage,net_rx,net_tx,timestamp,disk_json FROM monitor_history WHERE server_id=? ORDER BY id DESC LIMIT ?`,
 		serverID, limit,
 	)
 	if err != nil {
@@ -386,10 +421,13 @@ func (s *Store) GetMonitorHistory(serverID string, limit int) ([]models.MonitorP
 	for rows.Next() {
 		var mp models.MonitorPoint
 		var ts string
-		if err := rows.Scan(&mp.ID, &mp.ServerID, &mp.CPUUsage, &mp.MemTotal, &mp.MemUsed, &mp.MemUsage, &mp.DiskTotal, &mp.DiskUsed, &mp.DiskUsage, &mp.NetRx, &mp.NetTx, &ts); err != nil {
+		var diskJSON sql.NullString
+		if err := rows.Scan(&mp.ID, &mp.ServerID, &mp.CPUUsage, &mp.MemTotal, &mp.MemUsed, &mp.MemUsage, &mp.DiskTotal, &mp.DiskUsed, &mp.DiskUsage, &mp.NetRx, &mp.NetTx, &ts, &diskJSON); err != nil {
 			return nil, err
 		}
 		mp.Timestamp, _ = time.Parse(time.RFC3339, ts)
+		mp.DiskJSON = diskJSON.String
+		mp.Disks = disksFromJSON(diskJSON.String, &mp)
 		points = append(points, mp)
 	}
 	// 升序返回
@@ -397,6 +435,39 @@ func (s *Store) GetMonitorHistory(serverID string, limit int) ([]models.MonitorP
 		points[i], points[j] = points[j], points[i]
 	}
 	return points, rows.Err()
+}
+
+// nullableDiskJSON 没有磁盘快照时写 NULL，让新老数据走同一条回退逻辑
+func nullableDiskJSON(s string) any {
+	if strings.TrimSpace(s) == "" {
+		return nil
+	}
+	return s
+}
+
+// disksFromJSON 还原历史点的多磁盘快照。
+// disk_json 为空（迁移前的老数据）或损坏时，回退成一条由旧字段构成的根分区数据，历史曲线不断档。
+func disksFromJSON(raw string, mp *models.MonitorPoint) []models.DiskInfo {
+	if strings.TrimSpace(raw) != "" {
+		var ds []models.DiskInfo
+		if err := json.Unmarshal([]byte(raw), &ds); err == nil && len(ds) > 0 {
+			return ds
+		}
+	}
+	if mp.DiskTotal > 0 || mp.DiskUsed > 0 || mp.DiskUsage > 0 {
+		avail := mp.DiskTotal - mp.DiskUsed
+		if avail < 0 {
+			avail = 0
+		}
+		return []models.DiskInfo{{
+			Mount:   "/",
+			TotalMB: mp.DiskTotal,
+			UsedMB:  mp.DiskUsed,
+			AvailMB: avail,
+			Usage:   mp.DiskUsage,
+		}}
+	}
+	return nil
 }
 
 // ---- 命令历史 ----

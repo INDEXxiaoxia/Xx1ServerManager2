@@ -41,7 +41,7 @@ type DiskInfo struct {
 }
 ```
 
-`MonitorPoint` 增加一列：`DiskJSON string \`json:"diskJson"\``（历史点的多磁盘快照，JSON 数组字符串）。
+`MonitorPoint` 增加两个字段：`DiskJSON string \`json:"-"\``（快照原文，仅落库）与 `Disks []DiskInfo \`json:"disks,omitempty"\``（读取时还原、随桥接返回给前端；理由见「七、实施记录」偏差 1）。
 
 ### 3.2 采集（`internal/sshx`）
 
@@ -168,3 +168,25 @@ CREATE INDEX IF NOT EXISTS idx_monitor_history_server_id ON monitor_history(serv
 6. `Monitor.vue`：磁盘卡片改为整行 + 左侧列表 + 多线折线图 + 显示全部开关。
 7. `Index.vue`（总览）：关键磁盘行 + 迷你条（原生 title）。
 8. 验证：`go test ./...`、`go vet`、`npm run build`、`wails build`；用真实服务器（角落服务器 192.168.106.202 若有第二块盘）核对 `df -PTk` 与界面数值一致。
+
+## 七、实施记录（已完成）
+
+| 层 | 文件 | 内容 |
+|---|---|---|
+| 模型 | `internal/models/models.go` | 新增 `DiskInfo`；`MonitorPoint` 增 `DiskJSON`（仅落库）与 `Disks`（随桥接返回） |
+| 采集 | `internal/sshx/sshx.go` | 新增 `GetDisks` / `parseDf` / `dfUnitDivisor` / `isPseudoDisk` / `parseReadOnlyMounts` / `sortDisks` / `pickKeyDisk`；`GetSystemStats` 装配 `disks` 与关键磁盘旧字段；移除旧的单盘 `parseDisk` |
+| 落库 | `monitor.go`、`internal/store/store.go` | `disksJSON()` 序列化快照；`migrate()` 幂等补 `disk_json` 列与索引；`disksFromJSON()` 旧数据回退为根分区一条 |
+| 配色 | `frontend/src/theme.js` | `getDiskPalette` / `diskColorOf`（按挂载点稳定配色）/ `usageColor`（绿→黄→红语义色） |
+| 监控页 | `frontend/src/views/servers/Monitor.vue` | 磁盘改整行卡片：左列表（含只读标记，超长自身滚动）+ 右多线折线图（图例可点、tooltip 降序、80% 警戒虚线）+ 聚焦下拉 + 显示全部开关 |
+| 总览 | `frontend/src/views/dashboard/Index.vue` | 关键磁盘行（标签带挂载点，≥80% 变红加 ⚠）+ 迷你条（真实盘 ≥2 才出现，最多 4 段 + `+N`，原生 `title`） |
+| 单测 | `internal/sshx/sshx_test.go`、`internal/store/store_test.go` | 13 个新用例：df 三种布局、设备名换行、含空格挂载点、容量 `-`、单位推断、伪盘判定、关键盘选取、只读解析与转义、分段拆分、排序；老库迁移、往返读写、损坏快照回退、重复迁移幂等 |
+
+与设计稿的三处偏差（实现时按"更稳/更省"取舍）：
+
+1. **快照字段拆成两个**：`DiskJSON` 标 `json:"-"` 只用于落库，桥接侧只传已解析的 `Disks`，避免 60 个历史点各带一份双重编码的 JSON 字符串。
+2. **df 与 /proc/mounts 合并成一条命令**：用 `<<<SM2-DF>>>` / `<<<SM2-MOUNTS>>>` 标记分段，每轮采集只多一次 SSH 往返（原设计是两条命令）。
+3. **无 `-T` 时的伪盘判定改为"宁多勿漏"**：只按明确的伪文件系统名（tmpfs/devtmpfs/overlay…）过滤，认不出的设备名（如 ZFS 的 `pool/dataset`）一律当真实盘保留，避免误藏真实存储。
+
+验证：`go test ./...`（20 个用例全过，含新增 13 个）、`go vet ./...`、`go build ./...`、`npm run build`、`wails build` 全部通过，产物 `prj/build/bin/prj.exe` 已更新。
+
+待真机核对：解析逻辑以单测样例（GNU / BSD / 无 `-T` 三种布局）为准，尚未连真实服务器比对界面数值；建议在有第二块盘的机器上确认卡片迷你条与监控页多曲线是否符合预期。

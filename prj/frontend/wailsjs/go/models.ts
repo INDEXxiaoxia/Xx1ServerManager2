@@ -67,6 +67,34 @@ export namespace models {
 	        this.error = source["error"];
 	    }
 	}
+	export class DiskInfo {
+	    mount: string;
+	    device: string;
+	    fstype: string;
+	    totalMB: number;
+	    usedMB: number;
+	    availMB: number;
+	    usage: number;
+	    isPseudo: boolean;
+	    isReadOnly: boolean;
+	
+	    static createFrom(source: any = {}) {
+	        return new DiskInfo(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.mount = source["mount"];
+	        this.device = source["device"];
+	        this.fstype = source["fstype"];
+	        this.totalMB = source["totalMB"];
+	        this.usedMB = source["usedMB"];
+	        this.availMB = source["availMB"];
+	        this.usage = source["usage"];
+	        this.isPseudo = source["isPseudo"];
+	        this.isReadOnly = source["isReadOnly"];
+	    }
+	}
 	export class FileEntry {
 	    name: string;
 	    path: string;
@@ -138,6 +166,7 @@ export namespace models {
 	    diskTotal: number;
 	    diskUsed: number;
 	    diskUsage: number;
+	    disks?: DiskInfo[];
 	    netRx: number;
 	    netTx: number;
 	    // Go type: time
@@ -158,6 +187,7 @@ export namespace models {
 	        this.diskTotal = source["diskTotal"];
 	        this.diskUsed = source["diskUsed"];
 	        this.diskUsage = source["diskUsage"];
+	        this.disks = this.convertValues(source["disks"], DiskInfo);
 	        this.netRx = source["netRx"];
 	        this.netTx = source["netTx"];
 	        this.timestamp = this.convertValues(source["timestamp"], null);

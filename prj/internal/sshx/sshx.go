@@ -6,6 +6,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -803,11 +804,25 @@ func (c *Client) Download(remotePath, localPath string, progress func(transferre
 
 // ---- 监控 ----
 
+// 磁盘采集用的一次性命令：先 df（三级回退），再取 /proc/mounts 供识别只读挂载。
+// 合并成一条命令是为了每个采集周期只多花一次 SSH 往返；两段用标记分隔，解析时再拆开。
+const (
+	diskDFMarker     = "<<<SM2-DF>>>"
+	diskMountsMarker = "<<<SM2-MOUNTS>>>"
+)
+
+func diskCommand() string {
+	return "echo '" + diskDFMarker + "'; " +
+		"LC_ALL=C df -PTk 2>/dev/null || LC_ALL=C df -Pk 2>/dev/null || LC_ALL=C df -m / 2>/dev/null; " +
+		"echo '" + diskMountsMarker + "'; cat /proc/mounts 2>/dev/null"
+}
+
 // GetSystemStats 获取系统资源统计
 func (c *Client) GetSystemStats() map[string]any {
 	stats := map[string]any{
 		"cpuUsage": 0.0, "memTotal": int64(0), "memUsed": int64(0), "memUsage": 0.0,
 		"diskTotal": int64(0), "diskUsed": int64(0), "diskUsage": 0.0,
+		"disks": []models.DiskInfo{},
 		"netRx": int64(0), "netTx": int64(0),
 	}
 
@@ -827,12 +842,13 @@ func (c *Client) GetSystemStats() map[string]any {
 		stats["memUsage"] = round2(float64(used) / float64(total) * 100)
 	}
 
-	// 磁盘
-	_, diskOut, _ := c.ExecCommand("df -m / | tail -1 | awk '{print $2,$3,$5}'", 10, false)
-	if total, used, pct, ok := parseDisk(diskOut); ok {
-		stats["diskTotal"] = total
-		stats["diskUsed"] = used
-		stats["diskUsage"] = pct
+	// 磁盘：回传全部文件系统；旧字段保留为"关键磁盘"（占用最高的真实盘），旧界面无需改动
+	disks := c.GetDisks()
+	stats["disks"] = disks
+	if key, ok := pickKeyDisk(disks); ok {
+		stats["diskTotal"] = key.TotalMB
+		stats["diskUsed"] = key.UsedMB
+		stats["diskUsage"] = key.Usage
 	}
 
 	// 网络流量（每秒增量）
@@ -845,6 +861,222 @@ func (c *Client) GetSystemStats() map[string]any {
 	}
 
 	return stats
+}
+
+// GetDisks 采集全部文件系统容量。伪文件系统也会返回（IsPseudo 标记），是否展示交给前端。
+func (c *Client) GetDisks() []models.DiskInfo {
+	_, out, _ := c.ExecCommand(diskCommand(), 15, false)
+	dfOut, mountsOut := splitDiskSections(out)
+	disks := parseDf(dfOut)
+	if ro := parseReadOnlyMounts(mountsOut); len(ro) > 0 {
+		for i := range disks {
+			if ro[disks[i].Mount] {
+				disks[i].IsReadOnly = true
+			}
+		}
+	}
+	return sortDisks(disks)
+}
+
+// splitDiskSections 按标记拆出 df 段与 /proc/mounts 段；标记缺失时整体当 df 输出
+func splitDiskSections(out string) (string, string) {
+	i := strings.Index(out, diskMountsMarker)
+	if i < 0 {
+		return out, ""
+	}
+	head, tail := out[:i], out[i+len(diskMountsMarker):]
+	if j := strings.Index(head, diskDFMarker); j >= 0 {
+		head = head[j+len(diskDFMarker):]
+	}
+	return head, tail
+}
+
+// parseDf 解析 df 输出（-PTk 七列 / -Pk 六列），容量统一换算为 MB。
+// 兼容：表头行、空行、容量为 "-"、挂载点含空格；块大小由表头（1K-blocks / 1M-blocks / 512-blocks）推断。
+func parseDf(out string) []models.DiskInfo {
+	div := dfUnitDivisor(out)
+	var disks []models.DiskInfo
+	pendingDev := ""
+	for _, line := range strings.Split(out, "\n") {
+		f := strings.Fields(line)
+		if len(f) == 1 {
+			// 设备名过长时 GNU df 会把它单独占一行，记下来交给下一行
+			pendingDev = f[0]
+			continue
+		}
+		wrappedDev := pendingDev
+		pendingDev = ""
+		if len(f) < 6 {
+			continue
+		}
+		var dev, fstype, totalS, usedS, availS, useS, mount string
+		switch {
+		case isAllInt(f[1], f[2], f[3]) && strings.HasSuffix(f[4], "%"):
+			// 六列：Filesystem 1K-blocks Used Available Use% Mounted on
+			dev, totalS, usedS, availS, useS = f[0], f[1], f[2], f[3], f[4]
+			mount = strings.Join(f[5:], " ")
+			if wrappedDev != "" {
+				dev = wrappedDev
+			}
+		case len(f) >= 7 && isAllInt(f[2], f[3], f[4]) && strings.HasSuffix(f[5], "%"):
+			// 七列：Filesystem Type 1K-blocks Used Available Use% Mounted on
+			dev, fstype = f[0], f[1]
+			totalS, usedS, availS, useS = f[2], f[3], f[4], f[5]
+			mount = strings.Join(f[6:], " ")
+		default:
+			continue
+		}
+		if !strings.HasPrefix(mount, "/") {
+			continue // macOS 的 map -hosts 之类，或设备名换行产生的续行
+		}
+		total, e1 := strconv.ParseInt(totalS, 10, 64)
+		used, e2 := strconv.ParseInt(usedS, 10, 64)
+		avail, e3 := strconv.ParseInt(availS, 10, 64)
+		pct, e4 := strconv.ParseFloat(strings.TrimSuffix(useS, "%"), 64)
+		if e1 != nil || e2 != nil || e3 != nil || e4 != nil || total <= 0 {
+			continue // 容量为 "-"（/proc 等）或 0 的行没有展示价值
+		}
+		d := models.DiskInfo{
+			Mount:   mount,
+			Device:  dev,
+			Fstype:  fstype,
+			TotalMB: total / div,
+			UsedMB:  used / div,
+			AvailMB: avail / div,
+			Usage:   round2(pct),
+		}
+		d.IsPseudo = isPseudoDisk(dev, fstype)
+		disks = append(disks, d)
+	}
+	return disks
+}
+
+// dfUnitDivisor 由表头推断"块 → MB"的除数（df -k 为 1K 块、df -m 为 MB、BSD 可能是 512 块）
+func dfUnitDivisor(out string) int64 {
+	for _, line := range strings.Split(out, "\n") {
+		lf := strings.ToLower(strings.TrimSpace(line))
+		if !strings.HasPrefix(lf, "filesystem") && !strings.HasPrefix(lf, "文件系统") {
+			continue
+		}
+		switch {
+		case strings.Contains(lf, "1m-blocks"), strings.Contains(lf, "m-blocks"), strings.Contains(lf, "1048576-blocks"):
+			return 1
+		case strings.Contains(lf, "512-blocks"):
+			return 2048
+		default:
+			return 1024 // 1K-blocks / 1024-blocks
+		}
+	}
+	return 1024
+}
+
+// pseudoFSTypes 伪文件系统类型：没有容量意义，默认不展示（前端"显示全部"可展开）
+var pseudoFSTypes = map[string]bool{
+	"tmpfs": true, "devtmpfs": true, "devfs": true, "overlay": true, "aufs": true,
+	"squashfs": true, "ramfs": true, "proc": true, "sysfs": true, "cgroup": true,
+	"cgroup2": true, "nfsd": true, "nsfs": true, "9p": true, "autofs": true,
+	"mqueue": true, "debugfs": true, "tracefs": true, "securityfs": true, "pstore": true,
+	"bpf": true, "configfs": true, "hugetlbfs": true, "binfmt_misc": true, "efivarfs": true,
+	"fusectl": true, "rpc_pipefs": true, "fuse.gvfsd-fuse": true,
+}
+
+// isPseudoDisk 判断是否伪文件系统。
+// 有 fstype 时按类型判定；老系统 df 无 -T 时按设备名判定，且只认明确的伪文件系统名——
+// 认不出的一律当真实磁盘，宁可多显示也不漏报（ZFS 的 pool/dataset 这类"不像设备"的名字必须留下）。
+func isPseudoDisk(dev, fstype string) bool {
+	if fs := strings.ToLower(strings.TrimSpace(fstype)); fs != "" && pseudoFSTypes[fs] {
+		return true
+	}
+	if pseudoFSTypes[strings.ToLower(strings.TrimSpace(dev))] {
+		return true
+	}
+	switch dev {
+	case "(none)", "none", "-", "":
+		return true
+	}
+	return false
+}
+
+// parseReadOnlyMounts 解析 /proc/mounts，返回只读挂载点集合
+func parseReadOnlyMounts(out string) map[string]bool {
+	ro := map[string]bool{}
+	for _, line := range strings.Split(out, "\n") {
+		f := strings.Fields(line)
+		if len(f) < 4 {
+			continue
+		}
+		for _, opt := range strings.Split(f[3], ",") {
+			if opt == "ro" {
+				ro[unescapeMount(f[1])] = true
+				break
+			}
+		}
+	}
+	return ro
+}
+
+// unescapeMount 还原 /proc/mounts 里的八进制转义（空格 \040、制表 \011 等）
+func unescapeMount(s string) string {
+	if !strings.Contains(s, `\`) {
+		return s
+	}
+	var b strings.Builder
+	for i := 0; i < len(s); i++ {
+		if s[i] == '\\' && i+3 < len(s) && isOctal(s[i+1]) && isOctal(s[i+2]) && isOctal(s[i+3]) {
+			b.WriteByte((s[i+1]-'0')*64 + (s[i+2]-'0')*8 + (s[i+3] - '0'))
+			i += 3
+			continue
+		}
+		b.WriteByte(s[i])
+	}
+	return b.String()
+}
+
+func isOctal(c byte) bool { return c >= '0' && c <= '7' }
+
+func isAllInt(vals ...string) bool {
+	for _, v := range vals {
+		if _, err := strconv.ParseInt(v, 10, 64); err != nil {
+			return false
+		}
+	}
+	return true
+}
+
+// sortDisks 排序：/ 始终第一，其余按挂载点字母序，保证每次刷新顺序稳定
+func sortDisks(disks []models.DiskInfo) []models.DiskInfo {
+	sort.SliceStable(disks, func(i, j int) bool {
+		if (disks[i].Mount == "/") != (disks[j].Mount == "/") {
+			return disks[i].Mount == "/"
+		}
+		return disks[i].Mount < disks[j].Mount
+	})
+	return disks
+}
+
+// pickKeyDisk 选出"关键磁盘"：优先真实可写盘，退而求其次真实盘、再退到全部，取使用率最高的一块
+func pickKeyDisk(disks []models.DiskInfo) (models.DiskInfo, bool) {
+	preds := []func(models.DiskInfo) bool{
+		func(d models.DiskInfo) bool { return !d.IsPseudo && !d.IsReadOnly && d.TotalMB > 0 },
+		func(d models.DiskInfo) bool { return !d.IsPseudo && d.TotalMB > 0 },
+		func(d models.DiskInfo) bool { return d.TotalMB > 0 },
+	}
+	for _, ok := range preds {
+		var best models.DiskInfo
+		found := false
+		for _, d := range disks {
+			if !ok(d) {
+				continue
+			}
+			if !found || d.Usage > best.Usage {
+				best, found = d, true
+			}
+		}
+		if found {
+			return best, true
+		}
+	}
+	return models.DiskInfo{}, false
 }
 
 func calcCPU(a, b string) (float64, bool) {
@@ -889,21 +1121,6 @@ func parseTwoInts(s string) (int64, int64, bool) {
 		return 0, 0, false
 	}
 	return a, b, true
-}
-
-func parseDisk(s string) (int64, int64, float64, bool) {
-	f := strings.Fields(s)
-	if len(f) < 3 {
-		return 0, 0, 0, false
-	}
-	t, e1 := strconv.ParseInt(f[0], 10, 64)
-	u, e2 := strconv.ParseInt(f[1], 10, 64)
-	pctStr := strings.TrimSuffix(f[2], "%")
-	pct, e3 := strconv.ParseFloat(pctStr, 64)
-	if e1 != nil || e2 != nil || e3 != nil {
-		return 0, 0, 0, false
-	}
-	return t, u, pct, true
 }
 
 func calcNet(a, b string) (int64, int64) {

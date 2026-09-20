@@ -65,34 +65,51 @@ type PresetPath struct {
 	CreatedAt   time.Time `json:"createdAt"`
 }
 
+// DiskInfo 单个文件系统的容量信息（容量单位 MB，与既有 diskTotal 口径一致）
+type DiskInfo struct {
+	Mount      string  `json:"mount"`      // 挂载点，如 / 或 /data
+	Device     string  `json:"device"`     // /dev/sdb1 或 server:/export
+	Fstype     string  `json:"fstype"`     // ext4 / xfs / tmpfs（老系统 df 不带 -T 时为空）
+	TotalMB    int64   `json:"totalMB"`    // 总容量
+	UsedMB     int64   `json:"usedMB"`     // 已用容量
+	AvailMB    int64   `json:"availMB"`    // 可用容量
+	Usage      float64 `json:"usage"`      // 使用率 0-100
+	IsPseudo   bool    `json:"isPseudo"`   // tmpfs / overlay 等伪文件系统
+	IsReadOnly bool    `json:"isReadOnly"` // ro 挂载（不参与"快满"预警）
+}
+
 // MonitorPoint 监控数据点
 type MonitorPoint struct {
-	ID         int       `json:"id"`
-	ServerID   string    `json:"serverId"`
-	CPUUsage   float64   `json:"cpuUsage"`
-	MemTotal   int64     `json:"memTotal"`
-	MemUsed    int64     `json:"memUsed"`
-	MemUsage   float64   `json:"memUsage"`
-	DiskTotal  int64     `json:"diskTotal"`
-	DiskUsed   int64     `json:"diskUsed"`
-	DiskUsage  float64   `json:"diskUsage"`
-	NetRx      int64     `json:"netRx"`
-	NetTx      int64     `json:"netTx"`
-	Timestamp  time.Time `json:"timestamp"`
+	ID        int     `json:"id"`
+	ServerID  string  `json:"serverId"`
+	CPUUsage  float64 `json:"cpuUsage"`
+	MemTotal  int64   `json:"memTotal"`
+	MemUsed   int64   `json:"memUsed"`
+	MemUsage  float64 `json:"memUsage"`
+	DiskTotal int64   `json:"diskTotal"`
+	DiskUsed  int64   `json:"diskUsed"`
+	DiskUsage float64 `json:"diskUsage"`
+	// DiskJSON 多磁盘快照原文（仅用于落库，不随桥接重复传输：前端读 Disks）
+	DiskJSON string `json:"-"`
+	// Disks 多磁盘快照；旧数据只有单组磁盘字段时，由 store 回退成一条根分区数据
+	Disks     []DiskInfo `json:"disks,omitempty"`
+	NetRx     int64      `json:"netRx"`
+	NetTx     int64      `json:"netTx"`
+	Timestamp time.Time  `json:"timestamp"`
 }
 
 // CommandHistory 命令执行历史
 type CommandHistory struct {
-	ID        int64      `json:"id"`
-	ServerID  string     `json:"serverId"`
-	ServerName string    `json:"serverName"`
-	Command   string     `json:"command"`
-	Status    TaskStatus `json:"status"`
-	ExitCode  int        `json:"exitCode"`
-	Stdout    string     `json:"stdout"`
-	Stderr    string     `json:"stderr"`
-	Duration  int64      `json:"duration"` // milliseconds
-	CreatedAt time.Time  `json:"createdAt"`
+	ID         int64      `json:"id"`
+	ServerID   string     `json:"serverId"`
+	ServerName string     `json:"serverName"`
+	Command    string     `json:"command"`
+	Status     TaskStatus `json:"status"`
+	ExitCode   int        `json:"exitCode"`
+	Stdout     string     `json:"stdout"`
+	Stderr     string     `json:"stderr"`
+	Duration   int64      `json:"duration"` // milliseconds
+	CreatedAt  time.Time  `json:"createdAt"`
 }
 
 // Settings 应用设置
@@ -149,14 +166,14 @@ type TextFileMeta struct {
 // TextFileContent 文本文件内容。
 // Base64 承载原始字节（未解码），避免非 UTF-8 内容经 JSON 桥被替换为 U+FFFD。
 type TextFileContent struct {
-	Path     string `json:"path"`
-	Size     int64  `json:"size"`
-	Base64   string `json:"base64"`
-	Encoding string `json:"encoding"`
-	HasBOM   bool   `json:"hasBOM"`
-	EOL      string `json:"eol"`
-	EOLMixed bool   `json:"eolMixed"`
-	Truncated bool  `json:"truncated"`
+	Path      string `json:"path"`
+	Size      int64  `json:"size"`
+	Base64    string `json:"base64"`
+	Encoding  string `json:"encoding"`
+	HasBOM    bool   `json:"hasBOM"`
+	EOL       string `json:"eol"`
+	EOLMixed  bool   `json:"eolMixed"`
+	Truncated bool   `json:"truncated"`
 }
 
 // TextFileWriteRequest 文本文件保存请求

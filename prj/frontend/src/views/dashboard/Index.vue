@@ -2,6 +2,7 @@
 import {ref, onMounted, onBeforeUnmount, computed} from 'vue'
 import {useRouter} from 'vue-router'
 import {api, events} from '@/api'
+import {usageColor} from '@/theme'
 
 const router = useRouter()
 const servers = ref([])
@@ -47,6 +48,62 @@ function fmtBytes(mb) {
   if (!mb) return '0 MB'
   if (mb >= 1024) return (mb / 1024).toFixed(1) + ' GB'
   return mb.toFixed(0) + ' MB'
+}
+
+// ---- 磁盘：卡片上只突出"关键磁盘"，多盘时附一行迷你条（卡片高度与磁盘数无关） ----
+
+function disksOf(id) {
+  return (statsMap.value[id] && statsMap.value[id].disks) || []
+}
+
+function realDisksOf(id) {
+  return disksOf(id).filter(d => !d.isPseudo)
+}
+
+// pickKeyDisk 与后端同规则：真实可写盘中占用最高的一块，逐级兜底
+function pickKeyDisk(disks) {
+  const preds = [d => !d.isPseudo && !d.isReadOnly, d => !d.isPseudo, () => true]
+  for (const ok of preds) {
+    let best = null
+    for (const d of disks || []) {
+      if (!ok(d)) continue
+      if (!best || (Number(d.usage) || 0) > (Number(best.usage) || 0)) best = d
+    }
+    if (best) return best
+  }
+  return null
+}
+
+function keyDiskOf(id) {
+  return pickKeyDisk(disksOf(id))
+}
+
+function keyMountOf(id) {
+  const k = keyDiskOf(id)
+  return k ? k.mount : ''
+}
+
+function isDiskWarn(id) {
+  const k = keyDiskOf(id)
+  return !!k && !k.isReadOnly && (Number(k.usage) || 0) >= 80
+}
+
+// 迷你条：仅当真实磁盘 ≥ 2 时出现，最多显示 4 段，其余以 +N 收口
+function miniDisks(id) {
+  const list = realDisksOf(id)
+  return list.length >= 2 ? list.slice(0, 4) : []
+}
+
+function hiddenDisks(id) {
+  return miniDisks(id).length ? Math.max(0, realDisksOf(id).length - 4) : 0
+}
+
+// 原生 title：多台服务器 × 多磁盘时不用组件化 tooltip，避免上百个浮层
+function diskTitle(d) {
+  const pct = (Number(d.usage) || 0).toFixed(1)
+  const fs = d.fstype ? `，${d.fstype}` : ''
+  const ro = d.isReadOnly ? ' · 只读' : ''
+  return `${d.mount} · ${pct}%（${fmtBytes(d.usedMB)} / ${fmtBytes(d.totalMB)}${fs}）${ro}`
 }
 
 function goMonitor(id) {
@@ -99,9 +156,17 @@ function goMonitor(id) {
                            :color="statsMap[s.id].memUsage > 80 ? 'var(--red)' : 'var(--green)'" />
             </div>
             <div class="metric">
-              <span>磁盘</span>
+              <span class="metric-key" :title="keyMountOf(s.id) ? '关键磁盘 ' + keyMountOf(s.id) : '磁盘'">
+                磁盘 {{ keyMountOf(s.id) }}
+              </span>
               <el-progress :percentage="Number(statsMap[s.id].diskUsage || 0).toFixed(1)" :stroke-width="8"
-                           :color="statsMap[s.id].diskUsage > 80 ? 'var(--red)' : 'var(--yellow)'" />
+                           :color="isDiskWarn(s.id) ? 'var(--red)' : 'var(--yellow)'" />
+              <span v-if="isDiskWarn(s.id)" class="disk-warn" title="使用率已达 80% 以上">⚠</span>
+            </div>
+            <div class="disk-mini" v-if="miniDisks(s.id).length">
+              <span v-for="d in miniDisks(s.id)" :key="d.mount" class="disk-seg"
+                    :style="{background: usageColor(d.usage)}" :title="diskTitle(d)" />
+              <span v-if="hiddenDisks(s.id)" class="disk-more">+{{ hiddenDisks(s.id) }}</span>
             </div>
             <div class="text-muted mt-12">
               内存 {{ fmtBytes(statsMap[s.id].memUsed) }} / {{ fmtBytes(statsMap[s.id].memTotal) }}
@@ -196,4 +261,18 @@ function goMonitor(id) {
 .metric { margin-top: 8px; display: flex; align-items: center; gap: 10px; }
 .metric span { width: 34px; color: var(--ink-2); font-size: 13px; flex-shrink: 0; }
 .metric .el-progress { flex: 1; }
+/* 关键磁盘标签带挂载点，比 CPU/内存 标签宽，过长时省略 */
+.metric .metric-key {
+  width: auto;
+  min-width: 34px;
+  max-width: 116px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.metric .disk-warn { width: auto; color: var(--red); font-size: 12px; }
+/* 多磁盘迷你条：固定一行 4px 细条，卡片高度与磁盘数量无关 */
+.disk-mini { margin-top: 7px; display: flex; align-items: center; gap: 3px; height: 4px; }
+.disk-mini .disk-seg { flex: 1; height: 4px; border-radius: 2px; opacity: .85; }
+.disk-mini .disk-more { font-size: 10px; line-height: 1; color: var(--ink-3); flex-shrink: 0; }
 </style>
