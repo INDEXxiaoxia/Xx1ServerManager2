@@ -104,13 +104,10 @@ function goTerminal(row) {
 function goFiles(row) {
   router.push({path: '/files', query: {serverId: row.id}})
 }
-function goServices(row) {
-  router.push({path: '/services', query: {serverId: row.id}})
-}
 
+// 「更多」下拉：测试连接 | 删除
 function handleMore(command, row) {
   if (command === 'test') testRow(row)
-  else if (command === 'edit') openEdit(row)
   else if (command === 'delete') remove(row)
 }
 </script>
@@ -149,13 +146,13 @@ function handleMore(command, row) {
             <el-tag :type="statusTag(row.status).type" size="small">{{ statusTag(row.status).text }}</el-tag>
           </template>
         </el-table-column>
-        <el-table-column label="操作" width="210" fixed="right">
+        <el-table-column label="操作" width="250" fixed="right">
           <template #default="{row}">
             <div class="op-bar">
               <el-button size="small" text type="primary" @click="goMonitor(row)">监控</el-button>
               <el-button size="small" text type="primary" @click="goTerminal(row)">终端</el-button>
               <el-button size="small" text type="primary" @click="goFiles(row)">文件</el-button>
-              <el-button size="small" text type="primary" @click="goServices(row)">服务</el-button>
+              <el-button size="small" text type="primary" @click="openEdit(row)">编辑</el-button>
               <el-dropdown trigger="click" @command="cmd => handleMore(cmd, row)">
                 <el-button size="small" text class="more-btn">
                   更多<el-icon class="el-icon--right"><ArrowDown /></el-icon>
@@ -163,7 +160,6 @@ function handleMore(command, row) {
                 <template #dropdown>
                   <el-dropdown-menu>
                     <el-dropdown-item command="test">测试连接</el-dropdown-item>
-                    <el-dropdown-item command="edit">编辑</el-dropdown-item>
                     <el-dropdown-item command="delete" divided>删除</el-dropdown-item>
                   </el-dropdown-menu>
                 </template>

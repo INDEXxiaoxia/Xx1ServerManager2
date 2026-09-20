@@ -10,10 +10,10 @@ const menus = [
   {path: '/dashboard', title: '总览', icon: 'Odometer'},
   {path: '/servers', title: '服务器列表', icon: 'Connection'},
   {path: '/monitor', title: '实时监控', icon: 'DataLine'},
+  {path: '/terminal', title: 'SSH 终端', icon: 'Monitor'},
   {path: '/files', title: '文件管理', icon: 'Folder'},
   {path: '/batch', title: '批量操作', icon: 'Upload'},
   {path: '/services', title: '服务管理', icon: 'Setting'},
-  {path: '/terminal', title: 'SSH 终端', icon: 'Monitor'},
   {path: '/groups', title: '分组管理', icon: 'FolderOpened'},
   {path: '/presets', title: '预设管理', icon: 'Collection'},
   {path: '/settings', title: '设置', icon: 'Tools'}
