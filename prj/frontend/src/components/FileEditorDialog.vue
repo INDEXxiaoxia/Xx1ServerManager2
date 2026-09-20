@@ -239,6 +239,15 @@ watch([lineNumbers, () => props.modelValue], async () => {
           <span class="tool-label">保存时移除 BOM</span>
           <el-switch v-model="removeBOM" size="small" />
         </div>
+        <!-- 还原：与同行下拉框同高的小号白色按钮，没有修改时禁用 -->
+        <el-button
+          class="tool-btn"
+          size="small"
+          :disabled="loading || !dirty"
+          @click="reset"
+        >
+          还原
+        </el-button>
       </div>
 
       <div class="editor-wrap" v-loading="loading">
@@ -266,13 +275,10 @@ watch([lineNumbers, () => props.modelValue], async () => {
 
     <template #footer>
       <div class="editor-footer">
-        <el-button text @click="reset" :disabled="loading || !dirty">还原</el-button>
-        <div>
-          <el-button @click="close">取消</el-button>
-          <el-button type="primary" :loading="saving" :disabled="loading" @click="save">
-            保存 (Ctrl+S)
-          </el-button>
-        </div>
+        <el-button @click="close">取消</el-button>
+        <el-button type="primary" :loading="saving" :disabled="loading" @click="save">
+          保存 (Ctrl+S)
+        </el-button>
       </div>
     </template>
   </el-dialog>
@@ -303,6 +309,22 @@ watch([lineNumbers, () => props.modelValue], async () => {
 }
 .tool-item { display: flex; align-items: center; gap: 8px; }
 .tool-label { font-size: 12px; color: var(--ink-2); }
+/* 白色小按钮：高度与同行的小号下拉/开关一致（Element Plus 小号尺寸即 24px） */
+.tool-btn {
+  background: var(--card);
+  color: var(--ink-2);
+  border-color: var(--line);
+}
+.tool-btn:not(.is-disabled):hover {
+  background: var(--card);
+  color: var(--blue-deep);
+  border-color: var(--blue);
+}
+.tool-btn.is-disabled {
+  background: var(--card);
+  color: var(--ink-3);
+  border-color: var(--line);
+}
 
 /* 编辑区撑满剩余空间；行号栏与文本区共用一个滚动位置 */
 .editor-wrap {
@@ -356,6 +378,12 @@ watch([lineNumbers, () => props.modelValue], async () => {
 }
 .status-dirty { color: var(--yellow); }
 .status-saved { color: var(--green); }
+.editor-footer {
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+  gap: 10px;
+}
 .mono { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
 </style>
 
