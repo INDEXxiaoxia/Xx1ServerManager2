@@ -595,9 +595,10 @@ onBeforeUnmount(() => {
     <!-- 当前位置（面包屑，可直接点击切换） -->
     <div class="crumb-bar">
       <span class="crumb-label">当前位置</span>
-      <el-breadcrumb separator="/">
+      <el-breadcrumb separator="/" class="crumb-path">
+        <!-- 根目录本身就以 / 表达，不要再作为独立 item 与分隔符叠加成 // -->
         <el-breadcrumb-item>
-          <span class="crumb-link" @click="jumpTo('/')">/</span>
+          <span class="crumb-root" :class="{current: currentPath === '/'}" @click="jumpTo('/')">/</span>
         </el-breadcrumb-item>
         <el-breadcrumb-item v-for="c in breadcrumb" :key="c.path">
           <span class="crumb-link" @click="jumpTo(c.path)">{{ c.name }}</span>
@@ -791,6 +792,17 @@ onBeforeUnmount(() => {
 .crumb-label { color: var(--ink-3); }
 .crumb-presets { display: inline-flex; align-items: center; }
 .spacer { flex: 1; }
+.crumb-path { display: inline-flex; align-items: center; }
+.crumb-root {
+  cursor: pointer;
+  padding: 0 4px;
+  border-radius: 6px;
+  background: var(--fill-color, rgba(127, 127, 127, .12));
+  transition: color .2s ease;
+}
+.crumb-root:hover { color: var(--blue); }
+/* 根目录时后面没有片段，只有它自身，弱化底纹避免看起来像可点的“上一级” */
+.crumb-root.current { background: transparent; padding: 0 2px; }
 .crumb-link { cursor: pointer; transition: color .2s ease; }
 .crumb-link:hover { color: var(--blue); }
 
