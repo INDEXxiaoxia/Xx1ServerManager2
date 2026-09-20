@@ -3,8 +3,11 @@ import {ref, computed, onMounted} from 'vue'
 import {api} from '@/api'
 import {useBatchStore} from '@/store/batch'
 import ServerSelector from '@/components/ServerSelector.vue'
-import Upload from '@/views/files/Upload.vue'
-import Execute from '@/views/commands/Execute.vue'
+// 注意：不能直接叫 Upload / Execute —— 这两个名字与全局注册的 Element Plus 图标
+// （@element-plus/icons-vue 的 Upload / Execute）重名，模板标签会解析到图标组件上，
+// 导致整个右侧内容渲染不出来。这里统一加 View 后缀避免冲突。
+import BatchUpload from '@/views/files/Upload.vue'
+import BatchExecute from '@/views/commands/Execute.vue'
 
 const store = useBatchStore()
 
@@ -35,7 +38,7 @@ function onChangeTab(name) {
 }
 
 function onServerSelection(list) {
-  store.setSelectedIds(list.map(s => s.id))
+  store.setSelectedIds((list || []).map(s => s.id))
 }
 
 onMounted(async () => {
@@ -62,28 +65,34 @@ onMounted(async () => {
       <!-- 右：批量上传 | 批量执行 -->
       <div class="right-panel">
         <div class="batch-head">
-          <el-radio-group :model-value="store.tab" @change="onChangeTab">
-            <el-radio-button value="upload">
-              <el-icon><Upload /></el-icon>&nbsp;批量上传
-            </el-radio-button>
-            <el-radio-button value="execute">
-              <el-icon><ScaleToOriginal /></el-icon>&nbsp;批量执行
-            </el-radio-button>
-          </el-radio-group>
-          <span class="head-tip">
-            已选 <b>{{ selectedServers.length }}</b> 台服务器
-            <el-tag v-if="store.uploadRunning || store.executeRunning" type="warning" size="small" class="running-tag">
-              有任务执行中
-            </el-tag>
-          </span>
+          <!-- 自绘分段控件：不依赖 el-radio-button，样式完全可控 -->
+          <div class="seg" role="tablist">
+            <button
+              v-for="t in TABS"
+              :key="t.name"
+              type="button"
+              class="seg-item"
+              :class="{active: store.tab === t.name}"
+              role="tab"
+              :aria-selected="store.tab === t.name"
+              @click="onChangeTab(t.name)"
+            >
+              <el-icon><component :is="t.icon" /></el-icon>
+              <span>{{ t.label }}</span>
+            </button>
+          </div>
+          <span class="head-tip">已选 <b>{{ selectedServers.length }}</b> 台服务器</span>
+          <el-tag v-if="store.uploadRunning || store.executeRunning" type="warning" size="small">
+            有任务执行中
+          </el-tag>
         </div>
 
         <!-- 两个组件同时保留：切换 tab 不卸载，任务进度与已填内容都不会丢 -->
         <div v-show="store.tab === 'upload'">
-          <Upload :selected-servers="selectedServers" />
+          <BatchUpload :selected-servers="selectedServers" />
         </div>
         <div v-show="store.tab === 'execute'">
-          <Execute :selected-servers="selectedServers" />
+          <BatchExecute :selected-servers="selectedServers" />
         </div>
       </div>
     </div>
@@ -113,11 +122,45 @@ onMounted(async () => {
   gap: 14px;
   flex-wrap: wrap;
   margin-bottom: 12px;
+  min-height: 40px;
+}
+/* 分段控件（与预设管理页的 tab 风格一致） */
+.seg {
+  display: inline-flex;
+  flex: 0 0 auto;
+  gap: 2px;
+  padding: 3px;
+  background: var(--fill-color);
+  border-radius: 999px;
+}
+.seg-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border: none;
+  outline: none;
+  cursor: pointer;
+  background: transparent;
+  padding: 6px 16px;
+  border-radius: 999px;
+  font-family: inherit;
+  font-size: 13px;
+  line-height: 1.4;
+  color: var(--ink-2);
+  white-space: nowrap;
+  transition: background-color .25s ease, color .25s ease, box-shadow .25s ease;
+}
+.seg-item:hover { color: var(--ink); }
+.seg-item.active {
+  background: var(--card);
+  color: var(--blue-deep);
+  font-weight: 600;
+  box-shadow: var(--card-shadow);
 }
 .head-tip {
   font-size: 13px;
   color: var(--ink-2);
+  white-space: nowrap;
 }
 .head-tip b { color: var(--ink); }
-.running-tag { margin-left: 6px; }
 </style>

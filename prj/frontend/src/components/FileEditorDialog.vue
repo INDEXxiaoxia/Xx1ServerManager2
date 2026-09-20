@@ -192,7 +192,7 @@ watch([lineNumbers, () => props.modelValue], async () => {
     v-model="visible"
     title="编辑远程文件"
     width="900px"
-    top="5vh"
+    align-center
     :close-on-click-modal="false"
     class="file-editor-dialog"
     @close="() => {}"
@@ -279,10 +279,7 @@ watch([lineNumbers, () => props.modelValue], async () => {
 </template>
 
 <style scoped>
-/* 弹窗本体：窗口高度的 80%，内容区自适应，滚动交给内部的文本区 */
-.file-editor-dialog { height: 80vh; }
-
-/* 结构：路径 / 提示 / 工具条 / 编辑区（自适应剩余高度）/ 状态栏 */
+/* 结构：路径 / 提示 / 工具条 / 编辑区（占满剩余高度）/ 状态栏 */
 .editor-shell {
   height: 100%;
   display: flex;
@@ -292,7 +289,7 @@ watch([lineNumbers, () => props.modelValue], async () => {
 .editor-path {
   font-size: 12px;
   color: var(--ink-3);
-  margin-bottom: 10px;
+  margin-bottom: 8px;
   word-break: break-all;
   flex: 0 0 auto;
 }
@@ -301,16 +298,16 @@ watch([lineNumbers, () => props.modelValue], async () => {
   flex-wrap: wrap;
   align-items: center;
   gap: 18px;
-  margin-bottom: 10px;
+  margin-bottom: 8px;
   flex: 0 0 auto;
 }
 .tool-item { display: flex; align-items: center; gap: 8px; }
 .tool-label { font-size: 12px; color: var(--ink-2); }
 
-/* 编辑区撑满剩余空间：文本区与行号栏同高同行高，一起滚动 */
+/* 编辑区撑满剩余空间；行号栏与文本区共用一个滚动位置 */
 .editor-wrap {
-  flex: 1;
-  min-height: 0;
+  flex: 1 1 auto;
+  min-height: 260px;   /* 兜底：任何情况下都不会被压成几行 */
   display: flex;
   align-items: stretch;
   border: 1px solid var(--line);
@@ -325,7 +322,7 @@ watch([lineNumbers, () => props.modelValue], async () => {
   width: 56px;
   text-align: right;
   font-size: 13px;
-  line-height: 1.55;
+  line-height: 21px;     /* 与文本区完全一致，保证行号与内容逐行对齐 */
   color: var(--ink-3);
   background: var(--paper-deep);
   overflow: hidden;      /* 滚动位置由 syncGutter 镜像文本区 */
@@ -333,15 +330,15 @@ watch([lineNumbers, () => props.modelValue], async () => {
   user-select: none;
 }
 .editor-area {
-  flex: 1;
+  flex: 1 1 auto;
   min-width: 0;
-  height: 100%;
+  height: auto;          /* 高度由 flex 撑开，不再写死像素值 */
   padding: 10px 12px;
   border: none;
   outline: none;
   resize: none;
   font-size: 13px;
-  line-height: 1.55;
+  line-height: 21px;
   background: transparent;
   color: var(--ink);
   white-space: pre;
@@ -363,20 +360,23 @@ watch([lineNumbers, () => props.modelValue], async () => {
 </style>
 
 <style>
-/* Element Plus 弹窗内部结构：让内容区占满弹窗高度并被居中 */
+/* 弹窗本体（无 scoped，因为对话框 DOM 挂载在 body 下）：
+   固定为窗口高度的 80% 并居中，内容区占满剩余高度。 */
 .file-editor-dialog {
+  height: 80vh;
+  max-height: 90vh;
   display: flex;
   flex-direction: column;
   margin: 0 auto;
 }
-.file-editor-dialog .el-dialog__body {
-  flex: 1;
-  min-height: 0;
-  overflow: hidden;
-  padding-top: 8px;
-}
 .file-editor-dialog .el-dialog__header,
 .file-editor-dialog .el-dialog__footer {
   flex: 0 0 auto;
+}
+.file-editor-dialog .el-dialog__body {
+  flex: 1 1 auto;
+  min-height: 0;         /* 允许内容区收缩，滚动交给内部文本区 */
+  overflow: hidden;
+  padding-top: 8px;
 }
 </style>
