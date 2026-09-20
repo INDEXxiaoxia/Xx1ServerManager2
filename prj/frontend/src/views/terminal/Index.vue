@@ -407,7 +407,9 @@ function onGlobalKeydown(ev) {
   color: var(--ink);
 }
 .term-tab.active {
-  background: var(--terminal-bg);
+  /* 与未选中标签保持同底色（不再用终端深色底），
+     选中态只靠顶部的高亮色条区分，浅色主题下不再出现“黑底灰字” */
+  background: var(--panel-2);
   color: var(--ink);
 }
 .term-tab.active::before {
