@@ -14,6 +14,9 @@ vendor/
 
 # ============ Wails 打包产物 ============
 prj/build/bin/
+# 图标大图源文件（单张 2MB 左右，不入库；成品 appicon.png / windows/icon.ico 会入库）
+# 需要换图标时把新图放到该路径，再执行 prj/build/make-icon.js 重新生成
+prj/build/icon-source.png
 
 # ============ 前端依赖与构建输出 ============
 node_modules/
