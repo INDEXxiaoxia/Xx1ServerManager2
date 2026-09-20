@@ -19,8 +19,14 @@ const pathInput = ref('/')
 const presetPaths = ref([])
 const jumping = ref(false)
 
-// 搜索面板
+// 搜索：仅在当前目录下模糊匹配文件名（需要更大范围时先切到该目录）
+const searchKeyword = ref('')
 const searchVisible = ref(false)
+const searchLoading = ref(false)
+const searchResult = ref(null)
+let searchTimer = null
+
+const searchScope = computed(() => (searchResult.value && searchResult.value.root) || currentPath.value)
 
 // 排序：prop 为 name/size/modTime，order 为 ascending/descending/null
 const sortProp = ref('name')
@@ -149,13 +155,28 @@ function resetListView() {
   sortOrder.value = 'ascending'
 }
 
+// 刷新/跳转/切换服务器时清空搜索状态，避免结果与当前目录不一致
+function clearSearch() {
+  if (searchTimer) clearTimeout(searchTimer)
+  searchKeyword.value = ''
+  searchVisible.value = false
+  searchResult.value = null
+}
+
+// 回到当前目录内容（关闭搜索结果）
+function exitSearch() {
+  searchVisible.value = false
+}
+
 async function onChange() {
   currentPath.value = '/'
   resetListView()
+  clearSearch()
   await loadDir()
 }
 
 // ---- 目录栏：输入跳转 ----
+// 触发方式：输入框内回车，或点击输入框以外的地方（失焦）
 async function jumpTo(target) {
   const raw = (target ?? pathInput.value ?? '').trim()
   if (!selectedId.value) {
@@ -177,6 +198,7 @@ async function jumpTo(target) {
     currentPath.value = check.path
     pathInput.value = check.path
     resetListView()
+    clearSearch()
     if (check.isSymlink && check.message) ElMessage.info(check.message)
     await loadDir()
   } catch (e) {
@@ -186,6 +208,14 @@ async function jumpTo(target) {
   } finally {
     jumping.value = false
   }
+}
+
+// 输入框回车 / 失焦统一入口：内容与当前目录相同则不重复请求
+function commitPath() {
+  if (jumping.value || loading.value) return
+  const v = (pathInput.value || '').trim()
+  if (v === currentPath.value) return
+  jumpTo(v)
 }
 
 function goUp() {
@@ -202,13 +232,54 @@ function openDir(entry) {
   if (entry.isDir) jumpTo(entry.path)
 }
 
-function openSearch() {
-  searchVisible.value = true
+// ---- 搜索：仅当前目录 ----
+function onSearchInput() {
+  if (searchTimer) clearTimeout(searchTimer)
+  const kw = searchKeyword.value.trim()
+  if (!kw) {
+    searchVisible.value = false
+    searchResult.value = null
+    return
+  }
+  // 轻微防抖：连续输入时只发最后一次请求，回车会立即触发
+  searchTimer = setTimeout(() => runSearch(), 400)
 }
 
-function onSearchJump(dir) {
-  searchVisible.value = false
+async function runSearch() {
+  if (searchTimer) clearTimeout(searchTimer)
+  const kw = searchKeyword.value.trim()
+  if (!selectedId.value) {
+    ElMessage.warning('请先选择服务器')
+    return
+  }
+  if (!kw) {
+    searchVisible.value = false
+    searchResult.value = null
+    return
+  }
+  searchLoading.value = true
+  searchVisible.value = true
+  try {
+    // recursive=false：只在当前目录这一层匹配，范围由用户切换目录决定
+    searchResult.value = await api.searchRemoteDir(selectedId.value, currentPath.value, kw, false)
+  } catch (e) {
+    ElMessage.error('搜索失败：' + e)
+    searchResult.value = null
+  } finally {
+    searchLoading.value = false
+  }
+}
+
+function onSearchJump(item) {
+  const dir = item.isDir ? item.path : dirOf(item.path)
+  clearSearch()
   jumpTo(dir)
+}
+
+function dirOf(p) {
+  if (!p) return '/'
+  const idx = p.lastIndexOf('/')
+  return idx <= 0 ? '/' : p.substring(0, idx)
 }
 
 // ---- 排序 ----
@@ -491,73 +562,93 @@ onBeforeUnmount(() => {
 
 <template>
   <div class="page-container">
-    <!-- 目录栏 -->
-    <div class="card mb-12">
-      <div class="toolbar-row">
-        <el-select v-model="selectedId" placeholder="选择服务器" style="width: 220px">
-          <el-option v-for="s in servers" :key="s.id" :label="`${s.name} (${s.host})`" :value="s.id" />
-        </el-select>
+    <!-- 功能条：服务器 / 路径 / 上级 -->
+    <div class="top-bar">
+      <el-select v-model="selectedId" placeholder="选择服务器" class="server-select">
+        <el-option v-for="s in servers" :key="s.id" :label="`${s.name} (${s.host})`" :value="s.id" />
+      </el-select>
 
-        <el-button :disabled="currentPath === '/'" @click="goUp">上级目录</el-button>
+      <el-input
+        v-model="pathInput"
+        class="path-input mono"
+        placeholder="输入目录路径后回车跳转，如 /etc 或 ~/logs"
+        clearable
+        @keyup.enter="commitPath"
+        @blur="commitPath"
+        @clear="commitPath"
+      >
+        <template #prefix><el-icon><FolderOpened /></el-icon></template>
+      </el-input>
 
-        <el-input
-          v-model="pathInput"
-          class="path-input mono"
-          placeholder="输入目录路径，如 /etc 或 ~/logs"
-          clearable
-          @keyup.enter="jumpTo()"
+      <el-tooltip content="返回上级目录" placement="bottom">
+        <el-button
+          class="up-btn"
+          :disabled="currentPath === '/'"
+          :loading="jumping"
+          @click="goUp"
         >
-          <template #prepend>/</template>
-          <template #append>
-            <el-select v-model="pathInput" placeholder="预设" style="width: 130px" @change="jumpTo($event)">
-              <el-option v-for="p in presetPaths" :key="p.id" :label="p.name" :value="p.path" />
-            </el-select>
-          </template>
-        </el-input>
-        <el-button type="primary" :loading="jumping" @click="jumpTo()">跳转</el-button>
-      </div>
-
-      <div class="toolbar-row second">
-        <el-breadcrumb separator="/" class="path">
-          <el-breadcrumb-item>
-            <span class="crumb-link" @click="jumpTo('/')">/</span>
-          </el-breadcrumb-item>
-          <el-breadcrumb-item v-for="c in breadcrumb" :key="c.path">
-            <span class="crumb-link" @click="jumpTo(c.path)">{{ c.name }}</span>
-          </el-breadcrumb-item>
-        </el-breadcrumb>
-        <div class="spacer"></div>
-        <el-button text size="small" @click="searchVisible = !searchVisible">
-          <el-icon><Search /></el-icon>&nbsp;搜索文件
+          <el-icon><Top /></el-icon>
         </el-button>
-        <el-button text size="small" :loading="loading" @click="loadDir">
-          <el-icon><Refresh /></el-icon>&nbsp;刷新
-        </el-button>
-      </div>
+      </el-tooltip>
     </div>
 
-    <!-- 搜索面板 -->
+    <!-- 当前位置（面包屑，可直接点击切换） -->
+    <div class="crumb-bar">
+      <span class="crumb-label">当前位置</span>
+      <el-breadcrumb separator="/">
+        <el-breadcrumb-item>
+          <span class="crumb-link" @click="jumpTo('/')">/</span>
+        </el-breadcrumb-item>
+        <el-breadcrumb-item v-for="c in breadcrumb" :key="c.path">
+          <span class="crumb-link" @click="jumpTo(c.path)">{{ c.name }}</span>
+        </el-breadcrumb-item>
+      </el-breadcrumb>
+      <span v-if="presetPaths.length" class="crumb-presets">
+        <el-button v-for="p in presetPaths.slice(0, 6)" :key="p.id" text size="small" @click="jumpTo(p.path)">
+          {{ p.name }}
+        </el-button>
+      </span>
+      <div class="spacer"></div>
+      <el-button text size="small" :loading="loading" @click="loadDir">
+        <el-icon><Refresh /></el-icon>&nbsp;刷新
+      </el-button>
+    </div>
+
+    <!-- 搜索结果（仅当前目录） -->
     <FileSearchPanel
-      v-model="searchVisible"
-      :server-id="selectedId"
-      :current-path="currentPath"
+      v-if="searchVisible"
+      :loading="searchLoading"
+      :keyword="searchKeyword"
+      :scope="searchScope"
+      :items="(searchResult && searchResult.items) || []"
       @jump="onSearchJump"
+      @close="exitSearch"
     />
 
     <!-- 目录列表 -->
     <div class="card">
-      <div class="toolbar-row list-head">
-        <span class="list-title">目录内容</span>
-        <span class="text-muted list-meta">
-          共 {{ total }} 项{{ dirCount ? `（含 ${dirCount} 个子目录）` : '' }} · 当前第 {{ currentPage }} 页
+      <div class="list-head">
+        <span class="list-meta">
+          共 <b>{{ total }}</b> 项{{ dirCount ? `（${dirCount} 个子目录）` : '' }} · 当前第 {{ currentPage }} 页
         </span>
         <div class="spacer"></div>
+        <el-input
+          v-model="searchKeyword"
+          class="search-input"
+          placeholder="在当前目录搜索文件名，回车搜索"
+          clearable
+          @keyup.enter="runSearch"
+          @input="onSearchInput"
+          @clear="clearSearch"
+        >
+          <template #prefix><el-icon><Search /></el-icon></template>
+        </el-input>
         <span v-if="computingAll" class="compute-progress">
           <el-icon class="is-loading"><Loading /></el-icon>
           计算中 {{ computeDone }}/{{ computeTotal }}
         </span>
         <el-button size="small" :disabled="!dirCount || computingAll" :loading="computingAll" @click="computeAllSizes">
-          计算全部目录大小
+          计算全部
         </el-button>
         <el-button size="small" @click="newDirDialog = true">新建目录</el-button>
         <el-button size="small" type="primary" :loading="uploadLoading" @click="pickUpload">上传文件</el-button>
@@ -609,10 +700,13 @@ onBeforeUnmount(() => {
         <el-table-column prop="mode" label="权限" width="110" />
         <el-table-column prop="modTime" label="修改时间" width="165" sortable="custom" />
 
-        <el-table-column label="操作" width="300" fixed="right">
+        <el-table-column label="操作" width="240" fixed="right">
           <template #default="{row}">
-            <el-button size="small" text type="primary" :disabled="row.isDir" @click="openEditor(row)">编辑</el-button>
-            <el-button size="small" text type="primary" :disabled="row.isDir" @click="download(row)">下载</el-button>
+            <!-- 目录没有下载/编辑语义，只保留重命名、权限、复制路径、删除 -->
+            <template v-if="!row.isDir">
+              <el-button size="small" text type="primary" @click="openEditor(row)">编辑</el-button>
+              <el-button size="small" text type="primary" @click="download(row)">下载</el-button>
+            </template>
             <el-button size="small" text type="primary" @click="openRename(row)">重命名</el-button>
             <el-button size="small" text @click="openChmod(row)">权限</el-button>
             <el-button size="small" text @click="copyPath(row)">复制路径</el-button>
@@ -673,27 +767,47 @@ onBeforeUnmount(() => {
 </template>
 
 <style scoped>
-.toolbar-row {
+/* 功能条：服务器 + 路径输入 + 上级图标按钮，单行紧凑排布 */
+.top-bar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 10px;
+}
+.server-select { width: 220px; flex: 0 0 220px; }
+.path-input { flex: 1; min-width: 240px; }
+.up-btn { flex: 0 0 auto; }
+
+.crumb-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 12px;
+  padding: 0 2px;
+  font-size: 12px;
+  color: var(--ink-2);
+  min-height: 24px;
+}
+.crumb-label { color: var(--ink-3); }
+.crumb-presets { display: inline-flex; align-items: center; }
+.spacer { flex: 1; }
+.crumb-link { cursor: pointer; transition: color .2s ease; }
+.crumb-link:hover { color: var(--blue); }
+
+.file-name { cursor: pointer; transition: color .2s ease; }
+.file-name:hover { color: var(--blue); }
+
+/* 标题栏：统计 + 搜索 + 操作按钮 */
+.list-head {
   display: flex;
   align-items: center;
   gap: 10px;
   flex-wrap: wrap;
+  margin-bottom: 12px;
 }
-.toolbar-row.second {
-  margin-top: 12px;
-  padding-top: 10px;
-  border-top: 1px dashed var(--line);
-}
-.path-input { flex: 1; min-width: 320px; }
-.spacer { flex: 1; }
-.path { margin-left: 4px; }
-.crumb-link { cursor: pointer; transition: color .2s ease; }
-.crumb-link:hover { color: var(--blue); }
-.file-name { cursor: pointer; transition: color .2s ease; }
-.file-name:hover { color: var(--blue); }
-.list-head { margin-bottom: 12px; }
-.list-title { font-weight: 600; font-size: 15px; }
-.list-meta { font-size: 12px; }
+.list-meta { font-size: 13px; color: var(--ink-2); }
+.list-meta b { color: var(--ink); font-size: 15px; }
+.search-input { width: 300px; }
 .compute-progress {
   display: inline-flex;
   align-items: center;
@@ -701,6 +815,7 @@ onBeforeUnmount(() => {
   font-size: 12px;
   color: var(--blue);
 }
+
 .size-action {
   cursor: pointer;
   color: var(--blue);
