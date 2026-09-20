@@ -1,10 +1,21 @@
 <script setup>
-import {computed, ref} from 'vue'
+import {computed, ref, onMounted, onBeforeUnmount} from 'vue'
 import {useRoute} from 'vue-router'
 import {ElMessage} from 'element-plus'
+import {useBatchStore} from '@/store/batch'
 
 const route = useRoute()
 const collapsed = ref(false)
+const batchStore = useBatchStore()
+
+// 批量任务的进度事件在这里统一监听：即使用户切到其他页面，
+// 上传/执行进度也会持续记录，回到批量操作页不会出现状态断档
+onMounted(() => {
+  batchStore.bindEvents()
+})
+onBeforeUnmount(() => {
+  batchStore.unbindEvents()
+})
 
 const menus = [
   {path: '/dashboard', title: '总览', icon: 'Odometer'},
@@ -20,11 +31,7 @@ const menus = [
 ]
 
 // 子路由（如 /batch/upload）也要高亮对应的父级菜单
-const activeMenu = computed(() => {
-  const path = route.path
-  if (path.startsWith('/batch')) return '/batch'
-  return path
-})
+const activeMenu = computed(() => route.path)
 const currentTitle = computed(() => route.meta.title || 'Xx1ServerManager2')
 const asideWidth = computed(() => (collapsed.value ? '64px' : '200px'))
 

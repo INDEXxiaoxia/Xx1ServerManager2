@@ -128,6 +128,14 @@ async function loadPresets() {
   }
 }
 
+// 预设路径下拉：选中后跳到该路径，随后清空选择以便再次选同一项
+const presetSelected = ref('')
+function onPresetChange(id) {
+  const p = presetPaths.value.find(x => x.id === id)
+  presetSelected.value = ''
+  if (p && p.path) jumpTo(p.path)
+}
+
 function clearDirSizes() {
   for (const k of Object.keys(dirSizes)) delete dirSizes[k]
   computeDone.value = 0
@@ -614,12 +622,24 @@ onBeforeUnmount(() => {
           <span class="crumb-link" @click="jumpTo(c.path)">{{ c.name }}</span>
         </el-breadcrumb-item>
       </el-breadcrumb>
-      <span v-if="presetPaths.length" class="crumb-presets">
-        <el-button v-for="p in presetPaths.slice(0, 6)" :key="p.id" text size="small" @click="jumpTo(p.path)">
-          {{ p.name }}
-        </el-button>
-      </span>
       <div class="spacer"></div>
+      <!-- 预设路径：右对齐到「刷新」左侧的下拉框 -->
+      <el-select
+        v-if="presetPaths.length"
+        v-model="presetSelected"
+        class="preset-select"
+        size="small"
+        placeholder="切换到预设路径"
+        clearable
+        @change="onPresetChange"
+      >
+        <el-option
+          v-for="p in presetPaths"
+          :key="p.id"
+          :label="`${p.name}（${p.path}）`"
+          :value="p.id"
+        />
+      </el-select>
       <el-button text size="small" :loading="loading" @click="loadDir">
         <el-icon><Refresh /></el-icon>&nbsp;刷新
       </el-button>
@@ -820,7 +840,13 @@ onBeforeUnmount(() => {
   min-height: 24px;
 }
 .crumb-label { color: var(--ink-3); }
-.crumb-presets { display: inline-flex; align-items: center; }
+.preset-select { width: 220px; flex: 0 0 auto; }
+/* 预设路径下拉过长时截断标签，保持当前位置行不被挤压 */
+.preset-select :deep(.el-select__placeholder) {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 .spacer { flex: 1; }
 .crumb-path { display: inline-flex; align-items: center; }
 .crumb-link { cursor: pointer; transition: color .2s ease; }

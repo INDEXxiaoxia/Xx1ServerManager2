@@ -38,7 +38,11 @@
 import {ref, computed, watch, onMounted} from 'vue'
 import {api} from '@/api'
 
-const emit = defineEmits(['update:selectedServers'])
+const props = defineProps({
+  // 已选中的服务器 id：从外部状态恢复选择（如离开页面再回来）
+  selectedServerIds: {type: Array, default: () => []}
+})
+const emit = defineEmits(['update:selected-servers'])
 const filterText = ref('')
 const treeRef = ref(null)
 const groups = ref([])
@@ -72,6 +76,20 @@ watch(filterText, val => treeRef.value?.filter(val))
 
 onMounted(load)
 
+// 树数据就绪或被外部状态变更后，恢复勾选状态
+watch(
+  [treeData, () => props.selectedServerIds],
+  async () => {
+    await Promise.resolve()
+    if (!treeRef.value) return
+    const ids = props.selectedServerIds || []
+    if (ids.length) treeRef.value.setCheckedKeys(ids, false)
+    else treeRef.value.setCheckedKeys([], false)
+    checkedNodes.value = treeRef.value.getCheckedNodes()
+  },
+  {immediate: true}
+)
+
 async function load() {
   try {
     servers.value = await api.listServers()
@@ -83,13 +101,13 @@ async function load() {
 
 function handleCheck() {
   checkedNodes.value = treeRef.value.getCheckedNodes()
-  emit('update:selectedServers', checkedNodes.value.filter(n => n.type === 'server').map(n => n.server))
+  emit('update:selected-servers', checkedNodes.value.filter(n => n.type === 'server').map(n => n.server))
 }
 
 function clearSelection() {
   treeRef.value?.setCheckedKeys([])
   checkedNodes.value = []
-  emit('update:selectedServers', [])
+  emit('update:selected-servers', [])
 }
 
 function filterNode(value, data) {

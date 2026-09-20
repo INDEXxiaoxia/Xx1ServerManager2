@@ -1,20 +1,34 @@
 <script setup>
-import {ref, onMounted, onBeforeUnmount} from 'vue'
+import {ref, computed, watch, onMounted} from 'vue'
 import {ElMessage} from 'element-plus'
-import {api, events} from '@/api'
-import ServerSelector from '@/components/ServerSelector.vue'
+import {api} from '@/api'
+import {useBatchStore} from '@/store/batch'
 
-const selectedServers = ref([])
-const command = ref('')
-const timeout = ref(30)
+// 服务器选择由批量操作页统一提供（左侧面板）
+const props = defineProps({
+  selectedServers: {type: Array, default: () => []}
+})
+
+const store = useBatchStore()
+const selectedServers = computed(() => props.selectedServers || [])
+
 const presets = ref([])
 const presetSelected = ref(null)
-const running = ref(false)
-const outputs = ref([])
-const summary = ref({total: 0, waiting: 0, running: 0, success: 0, failed: 0})
-const sessionId = ref('')
 const history = ref([])
 const groups = ref([])
+
+// 命令内容、超时、执行结果都保存在 store 中，切 tab / 切页返回后依然保留
+const command = computed({
+  get: () => store.executeCommand,
+  set: (v) => { store.executeCommand = v }
+})
+const timeout = computed({
+  get: () => store.executeTimeout,
+  set: (v) => { store.executeTimeout = v }
+})
+const outputs = computed(() => store.executeList)
+const summary = computed(() => store.executeSummary)
+const running = computed(() => store.executeRunning)
 
 async function load() {
   presets.value = await api.listPresetCommands()
@@ -30,75 +44,36 @@ function getServerGroupColor(server) {
 }
 
 function usePreset(p) {
-  if (p) command.value = p.command
-}
-
-function onOutput(data) {
-  if (sessionId.value && data.sessionId !== sessionId.value) return
-  const idx = outputs.value.findIndex(o => o.serverId === data.serverId)
-  if (idx >= 0) outputs.value[idx] = data
-  else outputs.value.push(data)
-  updateSummary()
-}
-
-function onCompleted(sid) {
-  if (sid === sessionId.value) {
-    running.value = false
-    load()
-  }
-}
-
-function updateSummary() {
-  summary.value.total = outputs.value.length
-  summary.value.running = outputs.value.filter(o => o.status === 'running').length
-  summary.value.success = outputs.value.filter(o => o.status === 'success').length
-  summary.value.failed = outputs.value.filter(o => o.status === 'failed').length
+  if (p) store.executeCommand = p.command
 }
 
 async function start() {
   if (!selectedServers.value.length) { ElMessage.warning('请选择服务器'); return }
   if (!command.value.trim()) { ElMessage.warning('请输入命令'); return }
-  running.value = true
-  outputs.value = []
-  summary.value = {total: 0, waiting: 0, running: 0, success: 0, failed: 0}
   try {
-    sessionId.value = await api.startBatchCommand(
+    const sid = await api.startBatchCommand(
       selectedServers.value.map(s => s.id),
       command.value,
       Number(timeout.value)
     )
+    store.setExecuteSession(sid)
     ElMessage.success('命令已下发')
   } catch (e) {
     ElMessage.error('启动失败：' + e)
-    running.value = false
   }
 }
 
-onMounted(() => {
-  events.on('command:output', onOutput)
-  events.on('command:completed', onCompleted)
-})
-onBeforeUnmount(() => {
-  events.off('command:output')
-  events.off('command:completed')
+// 执行结束后刷新历史记录（store 中的事件监听负责收敛 running 状态）
+watch(running, (v, old) => {
+  if (old && !v) load()
 })
 </script>
 
 <template>
-  <div class="page-container">
-    <div class="layout-container">
-      <!-- 左侧：服务器多选 -->
-      <div class="left-panel">
-        <div class="card selector-card">
-          <ServerSelector v-model:selected-servers="selectedServers" />
-        </div>
-      </div>
-
-      <!-- 右侧：命令执行 -->
-      <div class="right-panel">
-        <div class="card mb-12">
-          <h3 class="card-title">批量命令执行</h3>
-          <el-alert v-if="!selectedServers.length" title="请在左侧选择目标服务器" type="warning" show-icon :closable="false" class="mt-12" />
+  <div class="execute-panel">
+    <div class="card mb-12">
+      <h3 class="card-title">批量命令执行</h3>
+      <el-alert v-if="!selectedServers.length" title="请在左侧选择目标服务器" type="warning" show-icon :closable="false" class="mt-12" />
           <template v-else>
             <div class="mt-12">
               <span class="text-muted">目标服务器：</span>
@@ -124,7 +99,7 @@ onBeforeUnmount(() => {
               </el-form-item>
             </el-form>
           </template>
-        </div>
+    </div>
 
         <div class="card mb-12" v-if="outputs.length">
           <div class="flex-between">
@@ -168,28 +143,12 @@ onBeforeUnmount(() => {
             <el-table-column prop="createdAt" label="时间" width="170" />
           </el-table>
         </div>
-      </div>
-    </div>
   </div>
 </template>
 
 <style scoped>
-.layout-container {
-  display: flex;
-  gap: 16px;
-  align-items: flex-start;
-}
-.left-panel {
-  width: 320px;
-  flex-shrink: 0;
-  position: sticky;
-  top: 0;
-}
-.selector-card {
-  padding: 12px;
-  height: calc(100vh - 160px);
-}
-.right-panel { flex: 1; min-width: 0; }
+/* 服务器选择在左侧独立面板，这里只渲染右侧内容 */
+.execute-panel { min-width: 0; }
 .card-title {
   position: relative;
   display: inline-block;

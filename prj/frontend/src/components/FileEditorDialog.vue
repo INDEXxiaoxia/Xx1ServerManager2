@@ -25,6 +25,7 @@ const keepBOM = ref(false)
 const removeBOM = ref(false) // keepBOM 的界面反向开关：打开表示“保存时移除 BOM”
 const eol = ref('lf')
 const textareaRef = ref(null)
+const gutterRef = ref(null)
 
 const ENCODINGS = [
   {label: 'UTF-8', value: 'utf-8'},
@@ -165,11 +166,25 @@ function onKeydown(e) {
   }
 }
 
-// 滚动行号栏与文本区同步
-function onScroll(e) {
-  const el = document.querySelector('.editor-gutter')
-  if (el) el.scrollTop = e.target.scrollTop
+// 行号栏与文本区严格同步：
+// 两者高度相同、行高相同，滚动时把文本区的垂直与水平偏移原样镜像给行号栏。
+function syncGutter() {
+  const ta = textareaRef.value
+  const gut = gutterRef.value
+  if (!ta || !gut) return
+  gut.scrollTop = ta.scrollTop
+  gut.scrollLeft = ta.scrollLeft
 }
+
+function onScroll() {
+  syncGutter()
+}
+
+// 文本或行号变化后（切文件、还原）重新对齐，避免行号与内容错位
+watch([lineNumbers, () => props.modelValue], async () => {
+  await nextTick()
+  syncGutter()
+})
 </script>
 
 <template>
@@ -182,7 +197,8 @@ function onScroll(e) {
     class="file-editor-dialog"
     @close="() => {}"
   >
-    <div v-loading="loading" class="editor-body">
+    <!-- 用 body 结构撑满弹窗高度（弹窗高度为其自身的 80vh，由样式给出） -->
+    <div class="editor-shell">
       <div class="editor-path mono">{{ file?.path }}</div>
 
       <el-alert
@@ -225,8 +241,8 @@ function onScroll(e) {
         </div>
       </div>
 
-      <div class="editor-wrap">
-        <pre class="editor-gutter mono">{{ lineNumbers }}</pre>
+      <div class="editor-wrap" v-loading="loading">
+        <pre ref="gutterRef" class="editor-gutter mono">{{ lineNumbers }}</pre>
         <textarea
           ref="textareaRef"
           v-model="text"
@@ -263,12 +279,22 @@ function onScroll(e) {
 </template>
 
 <style scoped>
-.editor-body { min-height: 320px; }
+/* 弹窗本体：窗口高度的 80%，内容区自适应，滚动交给内部的文本区 */
+.file-editor-dialog { height: 80vh; }
+
+/* 结构：路径 / 提示 / 工具条 / 编辑区（自适应剩余高度）/ 状态栏 */
+.editor-shell {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
 .editor-path {
   font-size: 12px;
   color: var(--ink-3);
   margin-bottom: 10px;
   word-break: break-all;
+  flex: 0 0 auto;
 }
 .editor-toolbar {
   display: flex;
@@ -276,11 +302,17 @@ function onScroll(e) {
   align-items: center;
   gap: 18px;
   margin-bottom: 10px;
+  flex: 0 0 auto;
 }
 .tool-item { display: flex; align-items: center; gap: 8px; }
 .tool-label { font-size: 12px; color: var(--ink-2); }
+
+/* 编辑区撑满剩余空间：文本区与行号栏同高同行高，一起滚动 */
 .editor-wrap {
+  flex: 1;
+  min-height: 0;
   display: flex;
+  align-items: stretch;
   border: 1px solid var(--line);
   border-radius: 12px;
   overflow: hidden;
@@ -289,20 +321,21 @@ function onScroll(e) {
 .editor-gutter {
   margin: 0;
   padding: 10px 8px;
-  width: 52px;
-  flex: 0 0 52px;
+  flex: 0 0 56px;
+  width: 56px;
   text-align: right;
-  font-size: 12px;
+  font-size: 13px;
   line-height: 1.55;
   color: var(--ink-3);
   background: var(--paper-deep);
-  overflow: hidden;
+  overflow: hidden;      /* 滚动位置由 syncGutter 镜像文本区 */
+  white-space: pre;
   user-select: none;
 }
 .editor-area {
   flex: 1;
   min-width: 0;
-  height: 420px;
+  height: 100%;
   padding: 10px 12px;
   border: none;
   outline: none;
@@ -316,18 +349,34 @@ function onScroll(e) {
 }
 .editor-status {
   display: flex;
+  flex-wrap: wrap;
   gap: 16px;
   align-items: center;
   margin-top: 8px;
   font-size: 12px;
   color: var(--ink-3);
+  flex: 0 0 auto;
 }
 .status-dirty { color: var(--yellow); }
 .status-saved { color: var(--green); }
-.editor-footer {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-}
 .mono { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+</style>
+
+<style>
+/* Element Plus 弹窗内部结构：让内容区占满弹窗高度并被居中 */
+.file-editor-dialog {
+  display: flex;
+  flex-direction: column;
+  margin: 0 auto;
+}
+.file-editor-dialog .el-dialog__body {
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+  padding-top: 8px;
+}
+.file-editor-dialog .el-dialog__header,
+.file-editor-dialog .el-dialog__footer {
+  flex: 0 0 auto;
+}
 </style>
