@@ -62,6 +62,8 @@ async function initTerminal(key) {
     fontSize: 13,
     fontFamily: 'Cascadia Code, Consolas, monospace',
     cursorBlink: true,
+    // 同步网格里格子较小，光标改成实心块更醒目，方便确认"输入到底进了哪个窗口"
+    cursorStyle: 'block',
     // 保留鼠标拖拽选择文本的能力（关掉后左键选择交给 xterm，而不是被应用独占）
     rightClickSelectsWord: false,
     theme: getTerminalTheme(themeState.name)
@@ -113,6 +115,9 @@ async function initTerminal(key) {
     if (syncMode.value) broadcastInput(key, data)
   })
 
+  // 给终端输入框打上可识别 id（调试/自动化定位用）
+  if (term.textarea) term.textarea.id = 'ta-' + key
+
   // xterm 的 textarea 获得焦点（例如用户用 Tab 键或直接点进终端）时同步高亮
   term.textarea?.addEventListener('focus', () => onPaneFocusIn(key))
 
@@ -157,7 +162,7 @@ function tryFocus(key) {
     term.textarea?.focus()
   } catch (e) { /* ignore */ }
   if (isTermFocused(key)) return
-  // DOM 兜底：xterm 内部 textarea 的类名固定，直接查到再聚焦
+  // DOM 兜底：xterm 内部 textarea 类名固定，直接查到再聚焦
   const el = document.querySelector(`#term-${key} .xterm-helper-textarea`)
   if (el) {
     try { el.focus() } catch (e) { /* ignore */ }
@@ -194,6 +199,17 @@ function focusedKey() {
 const lastFocusedKey = ref('')
 watch(activeKey, (v) => { if (v) lastFocusedKey.value = v })
 
+// 真实焦点终端的响应式副本：用于驱动"输入中"标识与光标样式，
+// 让"哪个窗口正在接收键盘输入"一眼可见（不再只靠边框颜色暗示）。
+const focusKey = ref('')
+function syncFocusKey() {
+  focusKey.value = focusedKey()
+}
+onMounted(() => {
+  document.addEventListener('focusin', syncFocusKey, true)
+  document.addEventListener('focusout', () => setTimeout(syncFocusKey, 0), true)
+})
+
 // 快捷操作的目标集合：
 // 同步开启 → 所有已连接终端；否则 → 真正持有焦点的那个终端（没有则回退到 activeKey）。
 // 用真实焦点而不是 activeKey，才能避免"命令发给了没在接收输入的那个窗口"。
@@ -203,6 +219,12 @@ function targetTabIds() {
   const key = focusedKey() || lastFocusedKey.value || activeKey.value
   const cur = list.find(t => t.key === key)
   return cur ? [cur.termId] : []
+}
+
+// 同步网格里每个格子的标识色（带序号显示在右侧，不再用浮层角标避免遮挡/错位）
+const CELL_COLORS = ['#5780A9', '#67947A', '#C79E4F', '#C58A98', '#9B7FB8', '#8F919B']
+function cellAccent(i) {
+  return CELL_COLORS[i % CELL_COLORS.length]
 }
 
 // ---- 尺寸自适应 ----
@@ -563,15 +585,20 @@ function onGlobalKeydown(ev) {
           v-for="(t, i) in tabs"
           :key="t.key"
           class="term-pane"
-          :class="{active: activeKey === t.key, 'grid-cell': syncMode}"
+          :class="{active: activeKey === t.key, focused: focusKey === t.key, 'grid-cell': syncMode}"
+          :style="syncMode ? {'--cell-accent': cellAccent(i)} : null"
           @mousedown="activateTab(t.key)"
           @click="activateTab(t.key)"
           @focusin="onPaneFocusIn(t.key)"
         >
-          <div v-if="syncMode" class="pane-badge">
-            <span class="pane-idx">{{ i + 1 }}</span>
+          <!-- 标题栏放在正常文档流里（不浮在终端上）：既不遮挡内容，也不会再错位 -->
+          <div v-if="syncMode" class="pane-head">
+            <span class="pane-no">{{ i + 1 }}</span>
             <span class="pane-name">{{ t.serverName }}</span>
-            <span v-if="t.connected === false" class="pane-off">已断开</span>
+            <span v-if="focusKey === t.key" class="pane-state on">
+              <i class="pane-dot" />输入中
+            </span>
+            <span v-else-if="t.connected === false" class="pane-state off">已断开</span>
           </div>
           <div :id="'term-' + t.key" class="term-container" />
         </div>
@@ -764,52 +791,86 @@ function onGlobalKeydown(ev) {
 .term-body.sync .term-pane {
   position: relative;
   inset: auto;
-  display: block;
+  display: flex;
+  flex-direction: column;
   opacity: 1;
   pointer-events: auto;
   min-width: 0;
   min-height: 0;
   border: 1px solid var(--line);
+  border-top: 3px solid var(--cell-accent, var(--line));
   border-radius: 10px;
   overflow: hidden;
   background: var(--terminal-bg);
 }
-/* 激活格：加粗高亮边框，和 tab 选中态一起标识「当前输入焦点」 */
+/* 激活格：加粗描边并使用主题主色（浅色/深色/赛博三套主题自动适配） */
 .term-body.sync .term-pane.active {
   border-color: var(--blue);
-  box-shadow: 0 0 0 1px var(--blue) inset, 0 0 10px var(--blue-glow);
+  border-left-width: 3px;
+  border-right-width: 3px;
+  border-bottom-width: 3px;
 }
-.term-body.sync .term-pane.active .pane-badge {
-  border-color: var(--blue);
+/* 真正持有键盘焦点的格子：颜色加深一档 + 标题栏文字加重，不做发光 */
+.term-body.sync .term-pane.focused {
+  border-color: var(--blue-deep);
+}
+.term-body.sync .term-pane.focused .pane-head {
   color: var(--blue-deep);
 }
-.pane-badge {
-  position: absolute;
-  z-index: 3;
-  top: 4px;
-  left: 6px;
+
+/* 格子标题栏：标题 + 序号 + 状态，占固定高度（终端高度由 flex 自动扣除） */
+.pane-head {
   display: flex;
   align-items: center;
   gap: 6px;
-  padding: 1px 7px;
-  border-radius: 999px;
+  flex: 0 0 auto;
+  height: 22px;
+  padding: 0 8px;
   font-size: 11px;
-  color: var(--ink-2);
+  color: var(--ink-3);
   background: var(--panel-2);
-  border: 1px solid var(--line);
-  pointer-events: none;
+  border-bottom: 1px solid var(--line);
+  overflow: hidden;
+  white-space: nowrap;
 }
-.pane-idx {
+.pane-no {
+  flex: 0 0 auto;
+  min-width: 14px;
+  height: 14px;
+  line-height: 14px;
+  text-align: center;
+  border-radius: 4px;
   font-weight: 700;
-  color: var(--blue-deep);
+  color: var(--card);
+  background: var(--cell-accent, var(--ink-3));
 }
-.pane-off { color: var(--red); }
+.pane-name {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: var(--ink-2);
+}
+.pane-state { flex: 0 0 auto; display: inline-flex; align-items: center; gap: 4px; }
+.pane-state.on { color: var(--green); font-weight: 600; }
+.pane-state.off { color: var(--red); }
+.pane-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: currentColor;
+  animation: breathe 2.4s ease-in-out infinite;
+}
+/* 终端容器：同步模式下由 flex 占据标题栏之外的全部高度（fit 依据它的尺寸计算行列） */
+.term-body.sync .term-container {
+  flex: 1 1 auto;
+  min-height: 0;
+}
 .term-container {
   width: 100%;
   height: 100%;
   padding: 4px;
 }
-.term-body.sync .term-container { padding-top: 20px; }
 .term-empty {
   position: absolute;
   inset: 0;
