@@ -367,6 +367,8 @@ function onGlobalKeydown(ev) {
 
 <style scoped>
 .terminal-page {
+  /* 标签栏统一高度：标签、加号按钮、空态下都取同一个值 */
+  --tabbar-h: 34px;
   height: 100%;
   display: flex;
   flex-direction: column;
@@ -378,12 +380,16 @@ function onGlobalKeydown(ev) {
   align-items: stretch;
   background: var(--panel-2);
   border-bottom: 1px solid var(--line);
+  /* 固定标签栏高度：没有标签时（.term-tabs 内容为空）也不会被压成只有 + 的高度 */
+  height: var(--tabbar-h);
+  flex: 0 0 auto;
 }
 .term-tabs {
   flex: 1;
   min-width: 0;
   display: flex;
   align-items: stretch;
+  height: var(--tabbar-h);
   overflow-x: auto;
   overflow-y: hidden;
   scrollbar-width: thin;
@@ -395,7 +401,9 @@ function onGlobalKeydown(ev) {
   display: flex;
   align-items: center;
   gap: 6px;
-  padding: 8px 14px;
+  padding: 0 14px;
+  height: var(--tabbar-h);
+  box-sizing: border-box;
   cursor: pointer;
   color: var(--ink-2);
   border-right: 1px solid var(--line);
@@ -427,6 +435,8 @@ function onGlobalKeydown(ev) {
 .tab-add {
   flex: 0 0 auto;
   width: 34px;
+  height: var(--tabbar-h);
+  box-sizing: border-box;
   display: flex;
   align-items: center;
   justify-content: center;
