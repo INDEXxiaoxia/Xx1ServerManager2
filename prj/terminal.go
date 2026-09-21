@@ -102,8 +102,8 @@ func (a *App) TerminalResize(id string, cols, rows int) error {
 }
 
 // TerminalWriteMany 一次向多个终端写入相同数据（多终端同步操作）。
-// 单条失败不影响其余终端，返回第一个错误的描述（成功时 err 为 nil，
-// 并返回实际写入成功的会话数，便于前端提示"已同步 N 个终端"）。
+// 单个会话写入失败时重试一次（短暂阻塞/背压的常见情况），仍失败则跳过该会话，
+// 不阻塞其余终端；返回实际写入成功的会话数与首个错误，便于前端如实提示。
 func (a *App) TerminalWriteMany(ids []string, data string) (int, error) {
 	written := 0
 	var firstErr error
@@ -114,22 +114,28 @@ func (a *App) TerminalWriteMany(ids []string, data string) (int, error) {
 		if !ok {
 			continue
 		}
-		ts.mu.Lock()
-		if ts.closed || ts.stdin == nil {
-			ts.mu.Unlock()
-			continue
-		}
-		_, err := ts.stdin.Write([]byte(data))
-		ts.mu.Unlock()
-		if err != nil {
-			if firstErr == nil {
-				firstErr = err
+		if err := a.writeTerminalOnce(ts, data); err != nil {
+			// 重试一次：同步键入是逐键调用，偶发的一次失败不该让某个窗口少一个字符
+			if err2 := a.writeTerminalOnce(ts, data); err2 != nil {
+				if firstErr == nil {
+					firstErr = err2
+				}
+				continue
 			}
-			continue
 		}
 		written++
 	}
 	return written, firstErr
+}
+
+func (a *App) writeTerminalOnce(ts *TerminalSession, data string) error {
+	ts.mu.Lock()
+	defer ts.mu.Unlock()
+	if ts.closed || ts.stdin == nil {
+		return errors.New("会话已关闭")
+	}
+	_, err := ts.stdin.Write([]byte(data))
+	return err
 }
 
 // RunRemoteCommand 在指定服务器上执行一次性命令并返回标准输出。

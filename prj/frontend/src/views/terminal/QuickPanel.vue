@@ -21,6 +21,7 @@ const CATEGORIES = ['系统', '网络', '服务', '磁盘', '日志', '其他']
 const category = ref('系统')
 const commands = ref([])
 const paths = ref([])
+// 初值必须是 false：侧栏一打开就显示遮罩会闪一下（这层遮罩还会盖住整个侧栏）
 const loading = ref(false)
 
 // 目标终端：同步开启时为全部已打开终端，否则只有当前激活终端

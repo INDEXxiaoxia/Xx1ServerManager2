@@ -101,11 +101,16 @@ async function initTerminal(key) {
     tab.connected = false
   })
 
-  // 输入 -> 后端；开启同步操作时把输入广播给其他终端
+  // 输入 -> 后端；开启同步操作时把输入广播给其他终端。
+// 以键盘真实输入为准：谁在接收键盘事件，谁就是焦点终端（顺带纠正高亮状态）。
   term.onData((data) => {
+    if (activeKey.value !== key) activeKey.value = key
     api.terminalWrite(termId, data)
     if (syncMode.value) broadcastInput(key, data)
   })
+
+  // xterm 的 textarea 获得焦点（例如用户用 Tab 键或直接点进终端）时同步高亮
+  term.textarea?.addEventListener('focus', () => onPaneFocusIn(key))
 
   // 尺寸变化：所有终端统一重新 fit（同步网格下每格尺寸都不同）
   const onResize = () => {
@@ -116,17 +121,55 @@ async function initTerminal(key) {
 }
 
 // ---- 激活终端（输入焦点）----
-// 点标签或点同步网格里的任意格子都会走这里：切换激活项 → 上方 tab 同步选中 →
-// 终端获得键盘焦点 → 该格边框高亮。三处状态始终一致。
-async function activateTab(key) {
+// 关键：xterm 的键盘输入只认它内部 textarea 的焦点，而 activeKey 只是我们自己维护的
+// 高亮状态。两者一旦不一致，就会出现"看起来选中了另一个窗口，但输入其实还在旧窗口"
+// —— 广播时又会把旧窗口当成焦点排除掉，于是旧窗口总是"慢一拍"或收不到命令。
+// 因此所有切换都走这里：改状态 → 立即把焦点真正交给 xterm。
+function activateTab(key) {
   if (!key) return
-  activeKey.value = key
+  // 幂等：已经在激活态就只确保焦点，不再走一遍流程（避免 focus 事件递归）
+  if (activeKey.value !== key) activeKey.value = key
   closeMenu()
-  await nextTick()
-  const term = terms.get(key)
-  if (term) {
-    try { term.focus() } catch (e) { /* 元素不可见时忽略 */ }
+  focusTerm(key)
+}
+
+// 焦点兜底：pane 内任何元素（终端 textarea、内边距、滚动条）获得焦点时，
+// 都把激活态对齐到该 pane。焦点只可能落在一个 pane 里，因此不会递归。
+function onPaneFocusIn(key) {
+  if (activeKey.value !== key) {
+    activeKey.value = key
+    closeMenu()
   }
+}
+
+// 把键盘焦点真正交给某个 xterm（同步执行，不等 DOM 更新，避免被浏览器默认聚焦抢回）
+function focusTerm(key) {
+  const term = terms.get(key)
+  if (!term) return
+  try {
+    term.focus()
+    term.textarea?.focus()
+  } catch (e) { /* 元素不可见时忽略 */ }
+}
+
+// 当前真正持有键盘焦点的终端 key（以 xterm 内部 textarea 的焦点为准）
+function focusedKey() {
+  for (const [key, term] of terms.entries()) {
+    const ta = term.textarea
+    if (ta && document.activeElement === ta) return key
+  }
+  return ''
+}
+
+// 快捷操作的目标集合：
+// 同步开启 → 所有已连接终端；否则 → 真正持有焦点的那个终端（没有则回退到 activeKey）。
+// 用真实焦点而不是 activeKey，才能避免"命令发给了没在接收输入的那个窗口"。
+function targetTabIds() {
+  const list = tabs.value.filter(t => t.termId && t.connected !== false)
+  if (syncMode.value) return list.map(t => t.termId)
+  const key = focusedKey() || activeKey.value
+  const cur = list.find(t => t.key === key)
+  return cur ? [cur.termId] : []
 }
 
 // ---- 尺寸自适应 ----
@@ -157,14 +200,21 @@ async function refitAll() {
 watch(sidebarOpen, () => { refitAll() }, {flush: 'post'})
 
 // ---- 多终端同步 ----
-// 只写给「其他」终端：发起者自身的显示由 xterm 本地回显 + SSH 回显保证，避免重复输入
+// 逐键同步：A 窗口的每一次按键（含退格、Tab、方向键产生的转义序列）都会广播给
+// 其他所有终端，因此是一个字符一个字符地对齐，而不是等回车才同步。
+// 只写给「其他」终端：发起者自身的显示由 xterm 本地回显 + SSH 回显保证，避免重复输入。
 function broadcastInput(fromKey, data) {
   if (!data) return
   const others = tabs.value
     .filter(t => t.key !== fromKey && t.termId && t.connected !== false)
     .map(t => t.termId)
   if (!others.length) return
-  api.terminalWriteMany(others, data).catch(() => { /* 单个会话断开由标签状态提示 */ })
+  api.terminalWriteMany(others, data).then((written) => {
+    // 实际写入数少于目标数时给出提示（某个会话可能已断开/写入失败）
+    if (typeof written === 'number' && written < others.length) {
+      ElMessage.warning(`同步输入：${others.length} 个终端中仅 ${written} 个写入成功`)
+    }
+  }).catch(() => { /* 会话断开由标签状态提示 */ })
 }
 
 async function toggleSync() {
@@ -182,15 +232,6 @@ async function toggleSync() {
 }
 
 // ---- 侧栏：快捷命令 / 路径 ----
-// 目标集合：同步开启时全部终端，否则当前激活终端
-function targetTabIds() {
-  if (syncMode.value) {
-    return tabs.value.filter(t => t.termId && t.connected !== false).map(t => t.termId)
-  }
-  const cur = activeTab.value
-  return cur && cur.termId && cur.connected !== false ? [cur.termId] : []
-}
-
 async function sendToTargets(text) {
   const ids = targetTabIds()
   if (!ids.length) {
@@ -200,14 +241,14 @@ async function sendToTargets(text) {
   if (ids.length === 1) {
     await api.terminalWrite(ids[0], text)
   } else {
-    await api.terminalWriteMany(ids, text)
+    // 返回实际写入成功的会话数：数量对不上说明有会话已断开/写入失败，如实反馈
+    const written = await api.terminalWriteMany(ids, text)
+    if (typeof written === 'number' && written < ids.length) {
+      ElMessage.warning(`目标 ${ids.length} 个终端，仅 ${written} 个写入成功（可能有会话已断开）`)
+    }
   }
-  // 焦点保持在当前激活终端上，方便直接敲回车；
-  // 但不要抢走用户刚点过的那个格子（activateTab 已负责聚焦）
-  const cur = activeKey.value
-  if (cur && terms.has(cur)) {
-    try { terms.get(cur).focus() } catch (e) { /* ignore */ }
-  }
+  // 焦点保持在当前激活终端上，方便直接敲回车
+  focusTerm(activeKey.value)
   return true
 }
 
@@ -413,12 +454,29 @@ watch(() => themeState.name, () => {
   })
 })
 
+// 页面就绪探测：等路由过渡与布局都稳定后再创建终端。
+// 之前直接在 onMounted 里 addTab()，此时页面切换过渡还没结束、终端容器尺寸不稳定，
+// xterm 会按错误尺寸初始化再被 refit 纠正 —— 表现为进入页面时"闪一下"。
+// 首次进入页面在等布局稳定，这期间不要显示"还没有打开终端"的空状态（会闪）
+const initializing = ref(true)
+
+async function waitForLayout() {
+  await nextTick()
+  await new Promise(r => requestAnimationFrame(r))
+  await new Promise(r => requestAnimationFrame(r))
+  await new Promise(r => setTimeout(r, 120))
+}
+
 onMounted(async () => {
   // 粘贴事件走「剪贴板 API 不可用」时的回退路径（隐藏输入框承载 Ctrl+V）
   document.addEventListener('paste', onPasteEvent)
   document.addEventListener('keydown', onGlobalKeydown)
   await loadServers()
+  await waitForLayout()
   addTab()
+  await waitForLayout()
+  initializing.value = false
+  refitAll()
 })
 
 onBeforeUnmount(() => {
@@ -474,6 +532,7 @@ function onGlobalKeydown(ev) {
           :class="{active: activeKey === t.key, 'grid-cell': syncMode}"
           @mousedown="activateTab(t.key)"
           @click="activateTab(t.key)"
+          @focusin="onPaneFocusIn(t.key)"
         >
           <div v-if="syncMode" class="pane-badge">
             <span class="pane-idx">{{ i + 1 }}</span>
@@ -482,7 +541,7 @@ function onGlobalKeydown(ev) {
           </div>
           <div :id="'term-' + t.key" class="term-container" />
         </div>
-        <div v-if="!tabs.length" class="term-empty">
+        <div v-if="!tabs.length && !initializing" class="term-empty">
           <el-empty description="还没有打开终端，点击标签栏的 + 新建" :image-size="70" />
         </div>
       </div>
