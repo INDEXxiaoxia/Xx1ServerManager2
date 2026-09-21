@@ -520,7 +520,9 @@ async function waitForLayout() {
   await nextTick()
   await new Promise(r => requestAnimationFrame(r))
   await new Promise(r => requestAnimationFrame(r))
-  await new Promise(r => setTimeout(r, 120))
+  // 页面切换过渡是 300ms：过渡进行中弹出的对话框/遮罩会被带 transform 的祖先
+  // 当成包含块，出现"遮罩与弹窗错位"，所以要多留余量等它彻底结束
+  await new Promise(r => setTimeout(r, 360))
 }
 
 onMounted(async () => {
@@ -650,7 +652,13 @@ function onGlobalKeydown(ev) {
       </div>
     </div>
 
-    <el-dialog v-model="dialogVisible" title="选择服务器" width="420px" @closed="closeMenu">
+    <el-dialog
+      v-model="dialogVisible"
+      title="选择服务器"
+      width="420px"
+      append-to-body
+      @closed="closeMenu"
+    >
       <el-select v-model="selectedServer" placeholder="选择服务器" style="width: 100%">
         <el-option v-for="s in servers" :key="s.id" :label="`${s.name} (${s.host})`" :value="s.id" />
       </el-select>

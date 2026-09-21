@@ -73,8 +73,15 @@ function lock() {
       </el-header>
       <el-main class="main">
         <router-view v-slot="{ Component }">
+          <!-- 过渡的 transform 必须加在**外层包裹元素**上，不能直接落在页面根元素上：
+               带 transform 的元素会成为后代 position:fixed 元素的包含块，
+               而 Element Plus 的弹窗遮罩就在页面子树里（未设 append-to-body 时），
+               于是遮罩会按"页面"而不是"视口"来定位与定尺，出现错位。
+               包一层后，页面根元素（.page-container）保持无 transform。 -->
           <transition name="page" mode="out-in">
-            <component :is="Component" :key="route.path" />
+            <div class="page-transition" :key="route.path">
+              <component :is="Component" />
+            </div>
           </transition>
         </router-view>
       </el-main>
@@ -229,6 +236,13 @@ function lock() {
 }
 
 /* 页面过渡：如微风拂过 */
+/* 过渡结束后必须保证不留 transform：translateY(0) 仍会创建包含块，
+   导致页面内的 fixed 元素（弹窗遮罩/下拉浮层）定位基准变成"页面"而非"视口"。 */
+.page-transition {
+  /* 让页面根元素（min-height: 100%）仍能撑满可视区，不因多包一层而塌陷 */
+  height: 100%;
+  transform: none;
+}
 .page-enter-active,
 .page-leave-active {
   transition: opacity .3s ease, transform .3s cubic-bezier(.16, 1, .3, 1);
@@ -240,5 +254,11 @@ function lock() {
 .page-leave-to {
   opacity: 0;
   transform: translateY(-6px);
+}
+/* 过渡进行中：页面内的固定层（遮罩/浮层）此刻会以带 transform 的祖先为包含块，
+   暂时不可交互，避免用户在这一瞬间点到错位的遮罩 */
+.page-enter-active .el-overlay,
+.page-leave-active .el-overlay {
+  pointer-events: none;
 }
 </style>
