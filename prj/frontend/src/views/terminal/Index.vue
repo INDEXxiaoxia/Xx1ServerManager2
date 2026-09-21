@@ -115,10 +115,31 @@ async function initTerminal(key) {
   tab._resize = onResize
 }
 
+// ---- 激活终端（输入焦点）----
+// 点标签或点同步网格里的任意格子都会走这里：切换激活项 → 上方 tab 同步选中 →
+// 终端获得键盘焦点 → 该格边框高亮。三处状态始终一致。
+async function activateTab(key) {
+  if (!key) return
+  activeKey.value = key
+  closeMenu()
+  await nextTick()
+  const term = terms.get(key)
+  if (term) {
+    try { term.focus() } catch (e) { /* 元素不可见时忽略 */ }
+  }
+}
+
 // ---- 尺寸自适应 ----
 // 单一入口：任何会改变终端可视尺寸的操作（展开/收起侧栏、切换同步网格、
-// 新建/关闭标签、窗口 resize）之后都要重新 fit 并上报，否则远端仍按旧宽度排版。
+// 新建/关闭标签、窗口 resize）之后都要重新 fit 并上报，否则远端仍按旧宽度排版
+// ——表现就是"旧终端内容变形、新开的正常"。
+function nextFrame() {
+  return new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))
+}
+
 async function refitAll() {
+  await nextTick()
+  await nextFrame()
   await nextTick()
   tabs.value.forEach((t) => {
     const term = terms.get(t.key)
@@ -130,6 +151,10 @@ async function refitAll() {
     } catch (e) { /* 元素不可见时忽略 */ }
   })
 }
+
+// 侧栏展开/收起会改变终端可用宽度：等布局落定后再对所有终端重新 fit。
+// flush: 'post' 确保在 DOM 更新之后执行。
+watch(sidebarOpen, () => { refitAll() }, {flush: 'post'})
 
 // ---- 多终端同步 ----
 // 只写给「其他」终端：发起者自身的显示由 xterm 本地回显 + SSH 回显保证，避免重复输入
@@ -177,8 +202,12 @@ async function sendToTargets(text) {
   } else {
     await api.terminalWriteMany(ids, text)
   }
-  // 保持焦点在终端上，方便直接敲回车
-  activeTerm()?.focus()
+  // 焦点保持在当前激活终端上，方便直接敲回车；
+  // 但不要抢走用户刚点过的那个格子（activateTab 已负责聚焦）
+  const cur = activeKey.value
+  if (cur && terms.has(cur)) {
+    try { terms.get(cur).focus() } catch (e) { /* ignore */ }
+  }
   return true
 }
 
@@ -192,11 +221,13 @@ async function onQuickInsert(command) {
   }
 }
 
-// 点击预设路径：cd 并立即执行（跳转本身就是意图）
+// 点击预设路径：cd 并回车执行（跳转本身就是意图）。
+// 关键：模拟回车必须发 \r（CR），不能发 \n —— SSH 的 PTY 会做 ICRNL 把 CR 转成 NL，
+// 而直接写入的 NL 只会被行规程当作换行，命令不执行（表现为"只输入了 cd 没跳转"）。
 async function onQuickJump(path) {
   if (!path) return
   const quoted = "'" + String(path).replace(/'/g, "'\\''") + "'"
-  const ok = await sendToTargets(`cd ${quoted}\n`)
+  const ok = await sendToTargets(`cd ${quoted}\r`)
   if (ok) {
     const n = targetTabIds().length
     ElMessage.success(n > 1 ? `已同步跳转到 ${n} 个终端：${path}` : `已跳转到：${path}`)
@@ -204,9 +235,8 @@ async function onQuickJump(path) {
 }
 
 function toggleSidebar() {
+  // 侧栏宽度变化后的重新 fit 交给 sidebarOpen 的 watch（flush: 'post'）统一处理
   sidebarOpen.value = !sidebarOpen.value
-  // 侧栏改变终端宽度，必须重新 fit
-  refitAll()
 }
 
 // ---- 复制 / 粘贴 ----
@@ -420,7 +450,7 @@ function onGlobalKeydown(ev) {
           :key="t.key"
           class="term-tab"
           :class="{active: activeKey === t.key}"
-          @click="activeKey = t.key"
+          @click="activateTab(t.key)"
         >
           <span class="tab-title">{{ t.title }}</span>
           <el-icon v-if="t.connected === false" class="tab-off" title="会话已断开"><WarningFilled /></el-icon>
@@ -442,7 +472,8 @@ function onGlobalKeydown(ev) {
           :key="t.key"
           class="term-pane"
           :class="{active: activeKey === t.key, 'grid-cell': syncMode}"
-          @click="activeKey = t.key"
+          @mousedown="activateTab(t.key)"
+          @click="activateTab(t.key)"
         >
           <div v-if="syncMode" class="pane-badge">
             <span class="pane-idx">{{ i + 1 }}</span>
@@ -610,13 +641,16 @@ function onGlobalKeydown(ev) {
   position: relative;
   min-height: 0;
 }
-/* 单窗口模式：叠层，只显示激活的那个 */
+/* 单窗口模式：叠层，只显示激活的那个。
+   注意用 visibility 而不是 display:none —— 隐藏的终端仍要保留布局尺寸，
+   这样展开/收起侧栏、切换同步时对「非激活」终端调用 fit() 才能测到正确宽高，
+   否则它们会按旧尺寸继续渲染，表现为内容变形。 */
 .term-pane {
   position: absolute;
   inset: 0;
-  display: none;
+  visibility: hidden;
 }
-.term-pane.active { display: block; }
+.term-pane.active { visibility: visible; }
 
 /* 同步模式：2×2 网格。每格固定 1/4 大小（grid-auto-rows 固定行高），
    超过 4 个终端时外层出现滚动条，而不是把格子压小 */
@@ -633,6 +667,7 @@ function onGlobalKeydown(ev) {
   position: relative;
   inset: auto;
   display: block;
+  visibility: visible;
   min-width: 0;
   min-height: 0;
   border: 1px solid var(--line);
@@ -640,8 +675,15 @@ function onGlobalKeydown(ev) {
   overflow: hidden;
   background: var(--terminal-bg);
 }
-.term-body.sync .term-pane:not(.active) { opacity: .96; }
-.term-body.sync .term-pane.active { box-shadow: inset 0 0 0 1px var(--blue); }
+/* 激活格：加粗高亮边框，和 tab 选中态一起标识「当前输入焦点」 */
+.term-body.sync .term-pane.active {
+  border-color: var(--blue);
+  box-shadow: 0 0 0 1px var(--blue) inset, 0 0 10px var(--blue-glow);
+}
+.term-body.sync .term-pane.active .pane-badge {
+  border-color: var(--blue);
+  color: var(--blue-deep);
+}
 .pane-badge {
   position: absolute;
   z-index: 3;
