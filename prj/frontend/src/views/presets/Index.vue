@@ -1,17 +1,18 @@
 <script setup>
-import {ref, reactive, onMounted, onErrorCaptured} from 'vue'
+import {ref, onMounted, onErrorCaptured} from 'vue'
 import {ElMessage, ElMessageBox} from 'element-plus'
 import {api} from '@/api'
+import PresetFormDialog from '@/components/PresetFormDialog.vue'
 
 const tab = ref('commands')
 const commands = ref([])
 const paths = ref([])
-const dialogVisible = ref(false)
-const editingType = ref('command')
-const form = reactive({id: '', name: '', command: '', path: '', description: '', category: ''})
 const pageError = ref('')
 
-const categories = ['系统', '网络', '服务', '磁盘', '日志', '其他']
+// 新增/编辑对话框改为复用 PresetFormDialog（终端快捷面板用同一个组件），避免两处各写一套表单
+const dialogVisible = ref(false)
+const dialogType = ref('command')
+const dialogItem = ref(null)
 
 // 组件内错误兜底：渲染错误直接显示在页面内，便于定位
 onErrorCaptured((err, instance, info) => {
@@ -30,32 +31,15 @@ async function load() {
 onMounted(load)
 
 function openAdd(type) {
-  editingType.value = type
-  Object.assign(form, {id: '', name: '', command: '', path: '', description: '', category: '其他'})
-  dialogVisible.value = true
-}
-function openEdit(item, type) {
-  editingType.value = type
-  Object.assign(form, {
-    id: item.id, name: item.name,
-    command: item.command || '', path: item.path || '',
-    description: item.description || '', category: item.category || '其他'
-  })
+  dialogType.value = type
+  dialogItem.value = null
   dialogVisible.value = true
 }
 
-async function save() {
-  if (!form.name) { ElMessage.warning('请输入名称'); return }
-  if (editingType.value === 'command') {
-    if (!form.command) { ElMessage.warning('请输入命令'); return }
-    await api.savePresetCommand({id: form.id, name: form.name, command: form.command, description: form.description, category: form.category})
-  } else {
-    if (!form.path) { ElMessage.warning('请输入路径'); return }
-    await api.savePresetPath({id: form.id, name: form.name, path: form.path, description: form.description})
-  }
-  ElMessage.success('保存成功')
-  dialogVisible.value = false
-  load()
+function openEdit(item, type) {
+  dialogType.value = type
+  dialogItem.value = item
+  dialogVisible.value = true
 }
 
 async function remove(type, item) {
@@ -125,28 +109,12 @@ async function remove(type, item) {
       </div>
     </div>
 
-    <el-dialog v-model="dialogVisible"
-               :title="editingType === 'command' ? '预设命令' : '预设路径'" width="480px">
-      <el-form label-width="70px">
-        <el-form-item label="名称"><el-input v-model="form.name" /></el-form-item>
-        <el-form-item v-if="editingType === 'command'" label="分类">
-          <el-select v-model="form.category" style="width: 100%">
-            <el-option v-for="c in categories" :key="c" :label="c" :value="c" />
-          </el-select>
-        </el-form-item>
-        <el-form-item v-if="editingType === 'command'" label="命令">
-          <el-input v-model="form.command" type="textarea" :rows="3" class="mono" />
-        </el-form-item>
-        <el-form-item v-else label="路径">
-          <el-input v-model="form.path" class="mono" placeholder="/var/log" />
-        </el-form-item>
-        <el-form-item label="描述"><el-input v-model="form.description" /></el-form-item>
-      </el-form>
-      <template #footer>
-        <el-button @click="dialogVisible = false">取消</el-button>
-        <el-button type="primary" @click="save">保存</el-button>
-      </template>
-    </el-dialog>
+    <PresetFormDialog
+      v-model="dialogVisible"
+      :type="dialogType"
+      :item="dialogItem"
+      @saved="load"
+    />
   </div>
 </template>
 

@@ -84,8 +84,11 @@ export const api = {
   // SSH 终端
   terminalOpen: (serverId, cols, rows) => App.TerminalOpen(serverId, cols, rows),
   terminalWrite: (id, data) => App.TerminalWrite(id, data),
+  terminalWriteMany: (ids, data) => App.TerminalWriteMany(ids, data),
   terminalResize: (id, cols, rows) => App.TerminalResize(id, cols, rows),
-  terminalClose: (id) => App.TerminalClose(id)
+  terminalClose: (id) => App.TerminalClose(id),
+  // 在指定服务器上执行一次性命令（不占用交互式终端会话）
+  runRemoteCommand: (serverId, command, timeout) => App.RunRemoteCommand(serverId, command, timeout)
 }
 
 // Wails 事件封装

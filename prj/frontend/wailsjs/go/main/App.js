@@ -146,6 +146,10 @@ export function ResolveRemotePath(arg1, arg2) {
   return window['go']['main']['App']['ResolveRemotePath'](arg1, arg2);
 }
 
+export function RunRemoteCommand(arg1, arg2, arg3) {
+  return window['go']['main']['App']['RunRemoteCommand'](arg1, arg2, arg3);
+}
+
 export function SaveGroup(arg1) {
   return window['go']['main']['App']['SaveGroup'](arg1);
 }
@@ -224,6 +228,10 @@ export function TerminalResize(arg1, arg2, arg3) {
 
 export function TerminalWrite(arg1, arg2) {
   return window['go']['main']['App']['TerminalWrite'](arg1, arg2);
+}
+
+export function TerminalWriteMany(arg1, arg2) {
+  return window['go']['main']['App']['TerminalWriteMany'](arg1, arg2);
 }
 
 export function TestServerConnection(arg1, arg2, arg3, arg4) {

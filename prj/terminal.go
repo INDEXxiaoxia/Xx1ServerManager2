@@ -1,7 +1,9 @@
 package main
 
 import (
+	"errors"
 	"io"
+	"strings"
 	"sync"
 
 	"github.com/google/uuid"
@@ -97,6 +99,70 @@ func (a *App) TerminalResize(id string, cols, rows int) error {
 		return nil
 	}
 	return ts.sess.WindowChange(rows, cols)
+}
+
+// TerminalWriteMany 一次向多个终端写入相同数据（多终端同步操作）。
+// 单条失败不影响其余终端，返回第一个错误的描述（成功时 err 为 nil，
+// 并返回实际写入成功的会话数，便于前端提示"已同步 N 个终端"）。
+func (a *App) TerminalWriteMany(ids []string, data string) (int, error) {
+	written := 0
+	var firstErr error
+	for _, id := range ids {
+		a.terminalMu.Lock()
+		ts, ok := a.terminals[id]
+		a.terminalMu.Unlock()
+		if !ok {
+			continue
+		}
+		ts.mu.Lock()
+		if ts.closed || ts.stdin == nil {
+			ts.mu.Unlock()
+			continue
+		}
+		_, err := ts.stdin.Write([]byte(data))
+		ts.mu.Unlock()
+		if err != nil {
+			if firstErr == nil {
+				firstErr = err
+			}
+			continue
+		}
+		written++
+	}
+	return written, firstErr
+}
+
+// RunRemoteCommand 在指定服务器上执行一次性命令并返回标准输出。
+// 注意：它使用独立的一次性 SSH 连接，不占用交互式终端会话的通道，
+// 因此不会污染终端屏幕、也不会与正在输入的 shell 抢占。
+func (a *App) RunRemoteCommand(serverID, command string, timeout int) (string, error) {
+	if strings.TrimSpace(command) == "" {
+		return "", errors.New("命令不能为空")
+	}
+	sv, err := a.getServerWithPassword(serverID)
+	if err != nil {
+		return "", err
+	}
+	if timeout <= 0 {
+		timeout = 10
+	}
+	c := sshx.New(sv.Host, sv.Port, sv.Username, sv.Password, 10)
+	if err := c.Connect(); err != nil {
+		return "", err
+	}
+	defer c.Close()
+	code, stdout, stderr := c.ExecCommand(command, timeout, false)
+	if code != 0 {
+		msg := strings.TrimSpace(stderr)
+		if msg == "" {
+			msg = strings.TrimSpace(stdout)
+		}
+		if msg == "" {
+			msg = "命令执行失败"
+		}
+		return "", errors.New(msg)
+	}
+	return strings.TrimSpace(stdout), nil
 }
 
 // TerminalClose 关闭终端会话

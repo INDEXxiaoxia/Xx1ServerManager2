@@ -1,5 +1,5 @@
 <script setup>
-import {ref, watch, onMounted, onBeforeUnmount, nextTick} from 'vue'
+import {ref, computed, watch, onMounted, onBeforeUnmount, nextTick} from 'vue'
 import {useRoute} from 'vue-router'
 import {ElMessage} from 'element-plus'
 import {Terminal} from 'xterm'
@@ -7,16 +7,25 @@ import {FitAddon} from '@xterm/addon-fit'
 import 'xterm/css/xterm.css'
 import {api, events} from '@/api'
 import {themeState, getTerminalTheme} from '@/theme'
+import QuickPanel from './QuickPanel.vue'
 
 const route = useRoute()
 const servers = ref([])
-const tabs = ref([])         // {key, serverId, serverName, title, termId}
+const tabs = ref([])         // {key, serverId, serverName, title, termId, connected}
 const activeKey = ref('')
 const terms = new Map()      // key -> xterm instance
 const fitAddons = new Map()  // key -> fit addon
 const dialogVisible = ref(false)
 const selectedServer = ref('')
 const tabsRef = ref(null)
+
+// 侧栏（展开状态本地记忆）与同步操作
+const SIDEBAR_KEY = 'xx1.terminal.sidebar'
+const sidebarOpen = ref(localStorage.getItem(SIDEBAR_KEY) === '1')
+const syncMode = ref(false)
+watch(sidebarOpen, (v) => localStorage.setItem(SIDEBAR_KEY, v ? '1' : '0'))
+
+const activeTab = computed(() => tabs.value.find(t => t.key === activeKey.value) || null)
 
 // 右键菜单
 const menuVisible = ref(false)
@@ -31,14 +40,18 @@ async function openNew(serverId) {
   const sv = servers.value.find(s => s.id === serverId)
   if (!sv) return
   const key = 't' + Date.now() + Math.random().toString(36).slice(2, 6)
-  tabs.value.push({key, serverId, serverName: sv.name, title: sv.name})
+  tabs.value.push({key, serverId, serverName: sv.name, title: sv.name, connected: true})
   activeKey.value = key
   closeMenu()
   await nextTick()
+  if (syncMode.value) await nextTick() // 网格模式下列宽变化，等布局稳定再初始化
   initTerminal(key)
   // 新标签可能把标签栏撑到可视区外，滚动到可见位置
   const el = document.getElementById('tab-' + key)
   if (el && el.scrollIntoView) el.scrollIntoView({block: 'nearest', inline: 'nearest'})
+  // 同步模式下新开的终端也要参与广播
+  await nextTick()
+  refitAll()
 }
 
 async function initTerminal(key) {
@@ -85,23 +98,115 @@ async function initTerminal(key) {
     term.write(data)
   })
   events.on('terminal:close:' + termId, () => {
-    // 会话关闭
+    tab.connected = false
   })
 
-  // 输入 -> 后端
+  // 输入 -> 后端；开启同步操作时把输入广播给其他终端
   term.onData((data) => {
     api.terminalWrite(termId, data)
+    if (syncMode.value) broadcastInput(key, data)
   })
 
-  // 尺寸变化
+  // 尺寸变化：所有终端统一重新 fit（同步网格下每格尺寸都不同）
   const onResize = () => {
-    try {
-      fit.fit()
-      api.terminalResize(termId, term.cols, term.rows)
-    } catch (e) { /* ignore */ }
+    refitAll()
   }
   window.addEventListener('resize', onResize)
   tab._resize = onResize
+}
+
+// ---- 尺寸自适应 ----
+// 单一入口：任何会改变终端可视尺寸的操作（展开/收起侧栏、切换同步网格、
+// 新建/关闭标签、窗口 resize）之后都要重新 fit 并上报，否则远端仍按旧宽度排版。
+async function refitAll() {
+  await nextTick()
+  tabs.value.forEach((t) => {
+    const term = terms.get(t.key)
+    const fit = fitAddons.get(t.key)
+    if (!term || !fit || !t.termId) return
+    try {
+      fit.fit()
+      api.terminalResize(t.termId, term.cols, term.rows)
+    } catch (e) { /* 元素不可见时忽略 */ }
+  })
+}
+
+// ---- 多终端同步 ----
+// 只写给「其他」终端：发起者自身的显示由 xterm 本地回显 + SSH 回显保证，避免重复输入
+function broadcastInput(fromKey, data) {
+  if (!data) return
+  const others = tabs.value
+    .filter(t => t.key !== fromKey && t.termId && t.connected !== false)
+    .map(t => t.termId)
+  if (!others.length) return
+  api.terminalWriteMany(others, data).catch(() => { /* 单个会话断开由标签状态提示 */ })
+}
+
+async function toggleSync() {
+  syncMode.value = !syncMode.value
+  if (syncMode.value) {
+    if (!tabs.value.length) {
+      ElMessage.info('还没有打开的终端，同步视图会在新建终端后生效')
+    } else {
+      ElMessage.success(`同步操作已开启，共 ${tabs.value.length} 个终端`)
+    }
+  } else {
+    ElMessage.info('同步操作已关闭')
+  }
+  await refitAll()
+}
+
+// ---- 侧栏：快捷命令 / 路径 ----
+// 目标集合：同步开启时全部终端，否则当前激活终端
+function targetTabIds() {
+  if (syncMode.value) {
+    return tabs.value.filter(t => t.termId && t.connected !== false).map(t => t.termId)
+  }
+  const cur = activeTab.value
+  return cur && cur.termId && cur.connected !== false ? [cur.termId] : []
+}
+
+async function sendToTargets(text) {
+  const ids = targetTabIds()
+  if (!ids.length) {
+    ElMessage.warning('请先打开一个终端')
+    return false
+  }
+  if (ids.length === 1) {
+    await api.terminalWrite(ids[0], text)
+  } else {
+    await api.terminalWriteMany(ids, text)
+  }
+  // 保持焦点在终端上，方便直接敲回车
+  activeTerm()?.focus()
+  return true
+}
+
+// 点击预设命令：键入但不回车（避免误执行）
+async function onQuickInsert(command) {
+  if (!command) return
+  const ok = await sendToTargets(command)
+  if (ok) {
+    const n = targetTabIds().length
+    ElMessage.success(n > 1 ? `已同步键入到 ${n} 个终端，按回车执行` : '已键入命令，按回车执行')
+  }
+}
+
+// 点击预设路径：cd 并立即执行（跳转本身就是意图）
+async function onQuickJump(path) {
+  if (!path) return
+  const quoted = "'" + String(path).replace(/'/g, "'\\''") + "'"
+  const ok = await sendToTargets(`cd ${quoted}\n`)
+  if (ok) {
+    const n = targetTabIds().length
+    ElMessage.success(n > 1 ? `已同步跳转到 ${n} 个终端：${path}` : `已跳转到：${path}`)
+  }
+}
+
+function toggleSidebar() {
+  sidebarOpen.value = !sidebarOpen.value
+  // 侧栏改变终端宽度，必须重新 fit
+  refitAll()
 }
 
 // ---- 复制 / 粘贴 ----
@@ -115,6 +220,8 @@ function writeToTerm(text) {
   if (!tab || !tab.termId || !text) return
   // 走与键盘输入同一条通道，远端会按 bracketed paste 模式处理
   api.terminalWrite(tab.termId, text)
+  // 同步开启时，粘贴内容也要同步给其他终端
+  if (syncMode.value) broadcastInput(tab.key, text)
   term?.focus()
 }
 
@@ -248,6 +355,8 @@ function closeTab(key) {
   if (activeKey.value === key) {
     activeKey.value = tabs.value.length ? tabs.value[tabs.value.length - 1].key : ''
   }
+  // 同步网格下减少一格，其余格子的所属行列会变化，需要重新 fit
+  refitAll()
 }
 
 function addTab() {
@@ -314,6 +423,7 @@ function onGlobalKeydown(ev) {
           @click="activeKey = t.key"
         >
           <span class="tab-title">{{ t.title }}</span>
+          <el-icon v-if="t.connected === false" class="tab-off" title="会话已断开"><WarningFilled /></el-icon>
           <el-icon class="tab-close" @click.stop="closeTab(t.key)"><Close /></el-icon>
         </div>
         <el-tooltip content="新建终端" placement="bottom">
@@ -324,13 +434,49 @@ function onGlobalKeydown(ev) {
       </div>
     </div>
 
-    <div class="term-body">
-      <div v-for="t in tabs" :key="t.key" class="term-pane" :class="{active: activeKey === t.key}">
-        <div :id="'term-' + t.key" class="term-container" />
+    <div class="term-main">
+      <!-- 终端区域：单窗口叠层 或 同步 2×2 网格 -->
+      <div class="term-body" :class="{sync: syncMode}">
+        <div
+          v-for="(t, i) in tabs"
+          :key="t.key"
+          class="term-pane"
+          :class="{active: activeKey === t.key, 'grid-cell': syncMode}"
+          @click="activeKey = t.key"
+        >
+          <div v-if="syncMode" class="pane-badge">
+            <span class="pane-idx">{{ i + 1 }}</span>
+            <span class="pane-name">{{ t.serverName }}</span>
+            <span v-if="t.connected === false" class="pane-off">已断开</span>
+          </div>
+          <div :id="'term-' + t.key" class="term-container" />
+        </div>
+        <div v-if="!tabs.length" class="term-empty">
+          <el-empty description="还没有打开终端，点击标签栏的 + 新建" :image-size="70" />
+        </div>
       </div>
-      <div v-if="!tabs.length" class="term-empty">
-        <el-empty description="还没有打开终端，点击标签栏的 + 新建" :image-size="70" />
-      </div>
+
+      <!-- 右侧快捷侧边栏；收起时只留一条贴着右边缘的展开条 -->
+      <button
+        v-if="!sidebarOpen"
+        class="sidebar-handle"
+        title="展开快捷面板（预设命令 / 预设路径 / 同步操作）"
+        @click="toggleSidebar"
+      >
+        <el-icon><DArrowLeft /></el-icon>
+        <span class="handle-text">快捷面板</span>
+      </button>
+      <QuickPanel
+        v-else
+        class="sidebar"
+        :active-terminal="activeTab"
+        :terminals="tabs"
+        :sync="syncMode"
+        @update:sync="toggleSync"
+        @insert="onQuickInsert"
+        @jump="onQuickJump"
+        @close="toggleSidebar"
+      />
     </div>
 
     <!-- 右键菜单：复制 / 粘贴 / 全选 -->
@@ -431,6 +577,7 @@ function onGlobalKeydown(ev) {
 }
 .term-tab .tab-title { font-size: 13px; max-width: 160px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .term-tab .tab-close:hover { color: var(--red); }
+.term-tab .tab-off { color: var(--red); }
 /* 新建按钮不单独占行：紧跟在最后一个标签右侧；标签过多被挤出时自动贴在最右 */
 .tab-add {
   flex: 0 0 auto;
@@ -451,28 +598,116 @@ function onGlobalKeydown(ev) {
   background: var(--hover-bg);
   color: var(--blue);
 }
+/* 终端区 + 右侧快捷面板 */
+.term-main {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  align-items: stretch;
+}
 .term-body {
-  flex: 1;
+  flex: 1 1 auto;
   position: relative;
   min-height: 0;
 }
+/* 单窗口模式：叠层，只显示激活的那个 */
 .term-pane {
   position: absolute;
   inset: 0;
   display: none;
 }
 .term-pane.active { display: block; }
+
+/* 同步模式：2×2 网格。每格固定 1/4 大小（grid-auto-rows 固定行高），
+   超过 4 个终端时外层出现滚动条，而不是把格子压小 */
+.term-body.sync {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-auto-rows: calc(50% - 4px);
+  gap: 8px;
+  padding: 8px;
+  overflow-y: auto;
+  overflow-x: hidden;
+}
+.term-body.sync .term-pane {
+  position: relative;
+  inset: auto;
+  display: block;
+  min-width: 0;
+  min-height: 0;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  overflow: hidden;
+  background: var(--terminal-bg);
+}
+.term-body.sync .term-pane:not(.active) { opacity: .96; }
+.term-body.sync .term-pane.active { box-shadow: inset 0 0 0 1px var(--blue); }
+.pane-badge {
+  position: absolute;
+  z-index: 3;
+  top: 4px;
+  left: 6px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 1px 7px;
+  border-radius: 999px;
+  font-size: 11px;
+  color: var(--ink-2);
+  background: var(--panel-2);
+  border: 1px solid var(--line);
+  pointer-events: none;
+}
+.pane-idx {
+  font-weight: 700;
+  color: var(--blue-deep);
+}
+.pane-off { color: var(--red); }
 .term-container {
   width: 100%;
   height: 100%;
   padding: 4px;
 }
+.term-body.sync .term-container { padding-top: 20px; }
 .term-empty {
   position: absolute;
   inset: 0;
   display: flex;
   align-items: center;
   justify-content: center;
+}
+
+/* 侧栏收起时的展开条：贴在终端区右边缘 */
+.sidebar-handle {
+  flex: 0 0 auto;
+  width: 22px;
+  border: none;
+  border-left: 1px solid var(--line);
+  background: var(--panel-2);
+  color: var(--ink-3);
+  cursor: pointer;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  transition: background-color .2s ease, color .2s ease;
+}
+.sidebar-handle:hover {
+  background: var(--hover-bg);
+  color: var(--blue);
+}
+.handle-text {
+  writing-mode: vertical-rl;
+  font-size: 11px;
+  letter-spacing: 2px;
+}
+.sidebar {
+  flex: 0 0 auto;
+  width: 300px;
+}
+@media (min-width: 1400px) {
+  .sidebar { width: 340px; }
 }
 
 /* 右键菜单 */

@@ -74,6 +74,8 @@ export function RenameRemote(arg1:string,arg2:string,arg3:string):Promise<void>;
 
 export function ResolveRemotePath(arg1:string,arg2:string):Promise<string>;
 
+export function RunRemoteCommand(arg1:string,arg2:string,arg3:number):Promise<string>;
+
 export function SaveGroup(arg1:models.Group):Promise<models.Group>;
 
 export function SavePresetCommand(arg1:models.PresetCommand):Promise<models.PresetCommand>;
@@ -113,6 +115,8 @@ export function TerminalOpen(arg1:string,arg2:number,arg3:number):Promise<string
 export function TerminalResize(arg1:string,arg2:number,arg3:number):Promise<void>;
 
 export function TerminalWrite(arg1:string,arg2:string):Promise<void>;
+
+export function TerminalWriteMany(arg1:Array<string>,arg2:string):Promise<number>;
 
 export function TestServerConnection(arg1:string,arg2:number,arg3:string,arg4:string):Promise<Record<string, any>>;
 
