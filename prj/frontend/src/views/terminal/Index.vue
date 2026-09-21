@@ -94,8 +94,12 @@ async function initTerminal(key) {
   tab.termId = termId
 
   // 输出 -> 终端
+  // 写完必须把视口钉到底部：xterm 的 scrollOnUserInput 只在"键盘输入"时回到底部，
+  // 而同步模式下其他窗口的输出是被动写进来的，视口会停在原处、新行被顶上去，
+  // 表现为"最后一行（提示符）不出现，按一下回车才出来"。
   events.on('terminal:data:' + termId, (data) => {
     term.write(data)
+    term.scrollToBottom()
   })
   events.on('terminal:close:' + termId, () => {
     tab.connected = false
@@ -133,6 +137,39 @@ function activateTab(key) {
   focusTerm(key)
 }
 
+// 把键盘焦点真正交给某个 xterm。
+// 先同步尝试一次（保证在浏览器默认聚焦流程之前拿到焦点），
+// 一帧后再校验一次：若焦点没落在该终端的输入区，则用 DOM 兜底再聚焦一次。
+// 这一步是为了彻底消除"高亮切了、键盘输入却还在旧窗口"的情况。
+function focusTerm(key) {
+  tryFocus(key)
+  requestAnimationFrame(() => {
+    if (activeKey.value !== key) return
+    if (!isTermFocused(key)) tryFocus(key)
+  })
+}
+
+function tryFocus(key) {
+  const term = terms.get(key)
+  if (!term) return
+  try {
+    term.focus()
+    term.textarea?.focus()
+  } catch (e) { /* ignore */ }
+  if (isTermFocused(key)) return
+  // DOM 兜底：xterm 内部 textarea 的类名固定，直接查到再聚焦
+  const el = document.querySelector(`#term-${key} .xterm-helper-textarea`)
+  if (el) {
+    try { el.focus() } catch (e) { /* ignore */ }
+  }
+}
+
+function isTermFocused(key) {
+  const term = terms.get(key)
+  const ta = term?.textarea || document.querySelector(`#term-${key} .xterm-helper-textarea`)
+  return !!ta && document.activeElement === ta
+}
+
 // 焦点兜底：pane 内任何元素（终端 textarea、内边距、滚动条）获得焦点时，
 // 都把激活态对齐到该 pane。焦点只可能落在一个 pane 里，因此不会递归。
 function onPaneFocusIn(key) {
@@ -140,16 +177,6 @@ function onPaneFocusIn(key) {
     activeKey.value = key
     closeMenu()
   }
-}
-
-// 把键盘焦点真正交给某个 xterm（同步执行，不等 DOM 更新，避免被浏览器默认聚焦抢回）
-function focusTerm(key) {
-  const term = terms.get(key)
-  if (!term) return
-  try {
-    term.focus()
-    term.textarea?.focus()
-  } catch (e) { /* 元素不可见时忽略 */ }
 }
 
 // 当前真正持有键盘焦点的终端 key（以 xterm 内部 textarea 的焦点为准）
@@ -161,13 +188,19 @@ function focusedKey() {
   return ''
 }
 
+// 「最近一次被用户作为输入目标的终端」。
+// 点侧栏按钮时焦点会离开终端（落到按钮上），此时 focusedKey() 为空，
+// 因此需要这个记录来保证快捷命令/路径仍然发给用户刚才操作的那个终端。
+const lastFocusedKey = ref('')
+watch(activeKey, (v) => { if (v) lastFocusedKey.value = v })
+
 // 快捷操作的目标集合：
 // 同步开启 → 所有已连接终端；否则 → 真正持有焦点的那个终端（没有则回退到 activeKey）。
 // 用真实焦点而不是 activeKey，才能避免"命令发给了没在接收输入的那个窗口"。
 function targetTabIds() {
   const list = tabs.value.filter(t => t.termId && t.connected !== false)
   if (syncMode.value) return list.map(t => t.termId)
-  const key = focusedKey() || activeKey.value
+  const key = focusedKey() || lastFocusedKey.value || activeKey.value
   const cur = list.find(t => t.key === key)
   return cur ? [cur.termId] : []
 }
@@ -191,6 +224,7 @@ async function refitAll() {
     try {
       fit.fit()
       api.terminalResize(t.termId, term.cols, term.rows)
+      term.scrollToBottom()
     } catch (e) { /* 元素不可见时忽略 */ }
   })
 }
@@ -701,15 +735,20 @@ function onGlobalKeydown(ev) {
   min-height: 0;
 }
 /* 单窗口模式：叠层，只显示激活的那个。
-   注意用 visibility 而不是 display:none —— 隐藏的终端仍要保留布局尺寸，
-   这样展开/收起侧栏、切换同步时对「非激活」终端调用 fit() 才能测到正确宽高，
-   否则它们会按旧尺寸继续渲染，表现为内容变形。 */
+   用 opacity + pointer-events 而不是 display:none / visibility:hidden ——
+   后两者会让「未激活」终端的 textarea 无法获得焦点（浏览器不允许聚焦不可见元素），
+   于是点击切换时焦点会停在旧窗口上，表现为"高亮切了但输入还在旧窗口"。
+   opacity: 0 的元素仍可聚焦，同时保留了布局尺寸，fit() 也能测到正确宽高。 */
 .term-pane {
   position: absolute;
   inset: 0;
-  visibility: hidden;
+  opacity: 0;
+  pointer-events: none;
 }
-.term-pane.active { visibility: visible; }
+.term-pane.active {
+  opacity: 1;
+  pointer-events: auto;
+}
 
 /* 同步模式：2×2 网格。每格固定 1/4 大小（grid-auto-rows 固定行高），
    超过 4 个终端时外层出现滚动条，而不是把格子压小 */
@@ -726,7 +765,8 @@ function onGlobalKeydown(ev) {
   position: relative;
   inset: auto;
   display: block;
-  visibility: visible;
+  opacity: 1;
+  pointer-events: auto;
   min-width: 0;
   min-height: 0;
   border: 1px solid var(--line);
