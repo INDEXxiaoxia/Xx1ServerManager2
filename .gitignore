@@ -21,6 +21,9 @@ prj/build/icon-source.png
 # 分发包（含 exe 与 WebView2 安装器，体积大不入库；需要时本地重新生成即可）
 dist/
 
+# 本地构建工具（如 NSIS 便携版，供 wails build -nsis 使用）
+.tools/
+
 # ============ 前端依赖与构建输出 ============
 node_modules/
 prj/frontend/dist/
