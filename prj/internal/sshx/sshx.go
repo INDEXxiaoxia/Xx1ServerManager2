@@ -193,6 +193,27 @@ func (c *Client) sftpClient() (*sftp.Client, error) {
 	return c.sftp, nil
 }
 
+// IsSessionGone 判断错误是否属于"会话已结束 / 连接已断开"这类可预期情况。
+// 交互式终端里用户 exit 或掉线后，写入与改窗口大小都会失败，
+// 这类错误在上层应被忽略（否则每次操作都会向前端抛一个未处理的拒绝）。
+func IsSessionGone(err error) bool {
+	if err == nil {
+		return false
+	}
+	if errors.Is(err, io.EOF) || errors.Is(err, io.ErrClosedPipe) || errors.Is(err, os.ErrClosed) {
+		return true
+	}
+	msg := strings.ToLower(err.Error())
+	for _, kw := range []string{
+		"eof", "closed", "broken pipe", "connection reset", "connection refused",
+	} {
+		if strings.Contains(msg, kw) {
+			return true
+		}
+	}
+	return false
+}
+
 // ListDir 列出远程目录
 func (c *Client) ListDir(path string) ([]models.FileEntry, error) {
 	sc, err := c.sftpClient()

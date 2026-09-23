@@ -68,7 +68,9 @@ func (a *App) TerminalOpen(serverID string, cols, rows int) (string, error) {
 	return id, nil
 }
 
-// TerminalWrite 向终端写入数据
+// TerminalWrite 向终端写入数据。
+// 会话已退出（EOF）时不算错误：标记会话关闭并返回 nil，
+// 否则前端每次按键都会拿到一个 PEM 拒绝，被全局兜底弹成红色错误条。
 func (a *App) TerminalWrite(id, data string) error {
 	a.terminalMu.Lock()
 	ts, ok := a.terminals[id]
@@ -81,8 +83,14 @@ func (a *App) TerminalWrite(id, data string) error {
 	if ts.closed {
 		return nil
 	}
-	_, err := ts.stdin.Write([]byte(data))
-	return err
+	if _, err := ts.stdin.Write([]byte(data)); err != nil {
+		if sshx.IsSessionGone(err) {
+			ts.closed = true
+			return nil
+		}
+		return err
+	}
+	return nil
 }
 
 // TerminalResize 调整终端尺寸
@@ -98,7 +106,15 @@ func (a *App) TerminalResize(id string, cols, rows int) error {
 	if ts.closed {
 		return nil
 	}
-	return ts.sess.WindowChange(rows, cols)
+	if err := ts.sess.WindowChange(rows, cols); err != nil {
+		// 会话已结束时不报错（展开/收起侧栏等操作会触发 resize）
+		if sshx.IsSessionGone(err) {
+			ts.closed = true
+			return nil
+		}
+		return err
+	}
+	return nil
 }
 
 // TerminalWriteMany 一次向多个终端写入相同数据（多终端同步操作）。

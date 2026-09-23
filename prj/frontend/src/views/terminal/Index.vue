@@ -111,7 +111,7 @@ async function initTerminal(key) {
 // 以键盘真实输入为准：谁在接收键盘事件，谁就是焦点终端（顺带纠正高亮状态）。
   term.onData((data) => {
     if (activeKey.value !== key) activeKey.value = key
-    api.terminalWrite(termId, data)
+    ignoreSessionError(api.terminalWrite(termId, data))
     if (syncMode.value) broadcastInput(key, data)
   })
 
@@ -227,6 +227,14 @@ function cellAccent(i) {
   return CELL_COLORS[i % CELL_COLORS.length]
 }
 
+// 终端会话相关的调用统一做容错：
+// 会话已退出（EOF / 连接断开）时，写入与改窗口大小必然失败，这属于正常情况，
+// 不能让它变成未处理的 Promise 拒绝（那样会被全局兜底弹成红色错误条"点击关闭 | EOF"）。
+function ignoreSessionError(p) {
+  if (p && typeof p.catch === 'function') p.catch(() => {})
+  return p
+}
+
 // ---- 尺寸自适应 ----
 // 单一入口：任何会改变终端可视尺寸的操作（展开/收起侧栏、切换同步网格、
 // 新建/关闭标签、窗口 resize）之后都要重新 fit 并上报，否则远端仍按旧宽度排版
@@ -245,7 +253,8 @@ async function refitAll() {
     if (!term || !fit || !t.termId) return
     try {
       fit.fit()
-      api.terminalResize(t.termId, term.cols, term.rows)
+      // 会话已退出时 resize 会失败（EOF），静默忽略，避免弹全局错误条
+      ignoreSessionError(api.terminalResize(t.termId, term.cols, term.rows))
       term.scrollToBottom()
     } catch (e) { /* 元素不可见时忽略 */ }
   })
@@ -294,14 +303,20 @@ async function sendToTargets(text) {
     ElMessage.warning('请先打开一个终端')
     return false
   }
-  if (ids.length === 1) {
-    await api.terminalWrite(ids[0], text)
-  } else {
-    // 返回实际写入成功的会话数：数量对不上说明有会话已断开/写入失败，如实反馈
-    const written = await api.terminalWriteMany(ids, text)
-    if (typeof written === 'number' && written < ids.length) {
-      ElMessage.warning(`目标 ${ids.length} 个终端，仅 ${written} 个写入成功（可能有会话已断开）`)
+  try {
+    if (ids.length === 1) {
+      await api.terminalWrite(ids[0], text)
+    } else {
+      // 返回实际写入成功的会话数：数量对不上说明有会话已断开/写入失败，如实反馈
+      const written = await api.terminalWriteMany(ids, text)
+      if (typeof written === 'number' && written < ids.length) {
+        ElMessage.warning(`目标 ${ids.length} 个终端，仅 ${written} 个写入成功（可能有会话已断开）`)
+      }
     }
+  } catch (e) {
+    // 会话已退出（EOF）等情况：给出提示而不是抛未处理的拒绝
+    ElMessage.warning('写入终端失败，会话可能已断开：' + e)
+    return false
   }
   // 焦点保持在当前激活终端上，方便直接敲回车
   focusTerm(activeKey.value)
@@ -346,7 +361,7 @@ function writeToTerm(text) {
   const term = activeTerm()
   if (!tab || !tab.termId || !text) return
   // 走与键盘输入同一条通道，远端会按 bracketed paste 模式处理
-  api.terminalWrite(tab.termId, text)
+  ignoreSessionError(api.terminalWrite(tab.termId, text))
   // 同步开启时，粘贴内容也要同步给其他终端
   if (syncMode.value) broadcastInput(tab.key, text)
   term?.focus()
@@ -472,7 +487,7 @@ function onMenuSelectAll() {
 function closeTab(key) {
   const tab = tabs.value.find(t => t.key === key)
   if (!tab) return
-  if (tab.termId) api.terminalClose(tab.termId)
+  ignoreSessionError(api.terminalClose(tab.termId))
   if (tab._resize) window.removeEventListener('resize', tab._resize)
   const term = terms.get(key)
   if (term) term.dispose()
@@ -543,7 +558,7 @@ onBeforeUnmount(() => {
   if (pasteInput && pasteInput.parentNode) pasteInput.parentNode.removeChild(pasteInput)
   pasteInput = null
   tabs.value.forEach(t => {
-    if (t.termId) api.terminalClose(t.termId)
+    ignoreSessionError(api.terminalClose(t.termId))
     if (t._resize) window.removeEventListener('resize', t._resize)
   })
   terms.forEach(t => t.dispose())

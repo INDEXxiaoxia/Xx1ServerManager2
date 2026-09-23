@@ -1,6 +1,8 @@
 package sshx
 
 import (
+	"errors"
+	"io"
 	"os"
 	"strings"
 	"testing"
@@ -129,6 +131,32 @@ func TestWriteFileBytesMode(t *testing.T) {
 	}
 	if got := os.FileMode(0).Perm(); got != 0 {
 		t.Fatalf("mode 为 0 时不应改权限，got %s", got)
+	}
+}
+
+// TestIsSessionGone 会话类错误识别：终端页依赖它把 EOF 当成"会话已结束"静默处理，
+// 而不是抛成前端未处理的 Promise 拒绝（会被全局兜底弹成红色错误条）
+func TestIsSessionGone(t *testing.T) {
+	gone := []error{
+		io.EOF,
+		io.ErrClosedPipe,
+		os.ErrClosed,
+		errors.New("EOF"),
+		errors.New("write |1: use of closed network connection"),
+		errors.New("read tcp 10.0.0.1:22: connection reset by peer"),
+		errors.New("write tcp: broken pipe"),
+		errors.New("ssh: session closed"),
+	}
+	for _, err := range gone {
+		if !IsSessionGone(err) {
+			t.Fatalf("应识别为会话已结束: %v", err)
+		}
+	}
+	keep := []error{nil, errors.New("permission denied"), errors.New("no such file or directory")}
+	for _, err := range keep {
+		if IsSessionGone(err) {
+			t.Fatalf("不应识别为会话已结束: %v", err)
+		}
 	}
 }
 
