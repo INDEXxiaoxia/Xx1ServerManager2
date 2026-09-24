@@ -6,8 +6,15 @@
   "frontend:build": "npm run build",
   "frontend:dev:watcher": "npm run dev",
   "frontend:dev:serverUrl": "auto",
+  "info": {
+    "companyName": "INDEXxiaoxia",
+    "productName": "ServerManager2",
+    "productVersion": "1.0.0",
+    "copyright": "Copyright 2026 INDEXxiaoxia",
+    "comments": "SSH server manager"
+  },
   "author": {
-    "name": "Xx1",
+    "name": "INDEXxiaoxia",
     "email": "INDEXxiaoxia@163.com"
   }
 }
