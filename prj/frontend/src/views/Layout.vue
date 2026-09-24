@@ -8,6 +8,10 @@ const route = useRoute()
 const collapsed = ref(false)
 const batchStore = useBatchStore()
 
+// 需要保活的页面（按组件名匹配，名字由页面里的 defineOptions 声明）
+// 只有 SSH 终端页需要：切走后会话与窗口状态继续保留，切回来即原样恢复。
+const KEEP_ALIVE = ['TerminalPage']
+
 // 批量任务的进度事件在这里统一监听：即使用户切到其他页面，
 // 上传/执行进度也会持续记录，回到批量操作页不会出现状态断档
 onMounted(() => {
@@ -72,18 +76,24 @@ function lock() {
         </div>
       </el-header>
       <el-main class="main">
-        <router-view v-slot="{ Component }">
-          <!-- 过渡的 transform 必须加在**外层包裹元素**上，不能直接落在页面根元素上：
-               带 transform 的元素会成为后代 position:fixed 元素的包含块，
-               而 Element Plus 的弹窗遮罩就在页面子树里（未设 append-to-body 时），
-               于是遮罩会按"页面"而不是"视口"来定位与定尺，出现错位。
-               包一层后，页面根元素（.page-container）保持无 transform。 -->
-          <transition name="page" mode="out-in">
-            <div class="page-transition" :key="route.path">
-              <component :is="Component" />
-            </div>
-          </transition>
-        </router-view>
+        <!-- 常驻外壳：给页面根元素提供高度上下文（页面根用 height:100% 撑满可视区），
+             它本身不参与过渡，也永远不携带 transform。 -->
+        <div class="page-shell">
+          <!-- keep-alive 只保活 SSH 终端页：切到其他页面时终端组件不销毁，
+               会话、标签、输出、侧栏状态都留在原处，切回来即原样恢复。
+               它必须放在 router-view 动态组件的外层、且自身常驻 —— 一旦让它跟着路由
+               一起重建（例如塞进带 :key 的包裹 div 里），缓存会随之被销毁，页面照样被卸载。
+               过渡只做 opacity：transform（哪怕 translateY(0)）会让元素成为后代
+               position:fixed 元素的包含块，弹窗遮罩与终端右键菜单就会按"页面"而不是
+               "视口"定位 —— 这正是右键菜单跑到窗口外面的成因，所以这里不再用位移动画。 -->
+          <router-view v-slot="{ Component }">
+            <transition name="page" mode="out-in">
+              <keep-alive :include="KEEP_ALIVE">
+                <component :is="Component" />
+              </keep-alive>
+            </transition>
+          </router-view>
+        </div>
       </el-main>
     </el-container>
   </el-container>
@@ -236,29 +246,19 @@ function lock() {
 }
 
 /* 页面过渡：如微风拂过 */
-/* 过渡结束后必须保证不留 transform：translateY(0) 仍会创建包含块，
-   导致页面内的 fixed 元素（弹窗遮罩/下拉浮层）定位基准变成"页面"而非"视口"。 */
-.page-transition {
-  /* 让页面根元素（min-height: 100%）仍能撑满可视区，不因多包一层而塌陷 */
+/* 只用 opacity：transform / filter 之类会让元素成为后代 position:fixed 元素的包含块，
+   页面内的弹窗遮罩、下拉浮层、终端右键菜单都会改按"页面"定位而错位；
+   opacity 只创建层叠上下文，不会改变 fixed 的定位基准，是这里唯一安全的选择。 */
+.page-shell {
+  /* 让页面根元素（height: 100%）仍能撑满可视区，不因多包一层而塌陷 */
   height: 100%;
-  transform: none;
 }
 .page-enter-active,
 .page-leave-active {
-  transition: opacity .3s ease, transform .3s cubic-bezier(.16, 1, .3, 1);
+  transition: opacity .3s ease;
 }
-.page-enter-from {
-  opacity: 0;
-  transform: translateY(10px);
-}
+.page-enter-from,
 .page-leave-to {
   opacity: 0;
-  transform: translateY(-6px);
-}
-/* 过渡进行中：页面内的固定层（遮罩/浮层）此刻会以带 transform 的祖先为包含块，
-   暂时不可交互，避免用户在这一瞬间点到错位的遮罩 */
-.page-enter-active .el-overlay,
-.page-leave-active .el-overlay {
-  pointer-events: none;
 }
 </style>

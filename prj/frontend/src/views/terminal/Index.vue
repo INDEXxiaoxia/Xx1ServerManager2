@@ -1,5 +1,5 @@
 <script setup>
-import {ref, computed, watch, onMounted, onBeforeUnmount, nextTick} from 'vue'
+import {ref, computed, watch, onMounted, onActivated, onDeactivated, onBeforeUnmount, nextTick} from 'vue'
 import {useRoute} from 'vue-router'
 import {ElMessage} from 'element-plus'
 import {Terminal} from 'xterm'
@@ -8,6 +8,10 @@ import 'xterm/css/xterm.css'
 import {api, events} from '@/api'
 import {themeState, getTerminalTheme} from '@/theme'
 import QuickPanel from './QuickPanel.vue'
+
+// 组件名供 Layout 的 <keep-alive :include> 匹配：切到其他页面时本页不销毁，
+// 终端会话/标签/输出/侧栏状态都继续保留，切回来即原样恢复。
+defineOptions({name: 'TerminalPage'})
 
 const route = useRoute()
 const servers = ref([])
@@ -27,10 +31,16 @@ watch(sidebarOpen, (v) => localStorage.setItem(SIDEBAR_KEY, v ? '1' : '0'))
 
 const activeTab = computed(() => tabs.value.find(t => t.key === activeKey.value) || null)
 
+// 页面根元素：用于判断本页当前是否真的在文档里（keep-alive 停用期间会整体移出文档）
+const pageRoot = ref(null)
+
 // 右键菜单
 const menuVisible = ref(false)
 const menuPos = ref({x: 0, y: 0})
 const hasSelection = ref(false)
+const menuEl = ref(null)
+// 先渲染再量尺寸，量完才显示：否则菜单会先在光标处闪一下再跳回边界内
+const menuReady = ref(false)
 
 async function loadServers() {
   servers.value = await api.listServers()
@@ -205,10 +215,30 @@ const focusKey = ref('')
 function syncFocusKey() {
   focusKey.value = focusedKey()
 }
-onMounted(() => {
+// focusout 之后 activeElement 才更新，延后一拍再同步
+function onDocFocusOut() {
+  setTimeout(syncFocusKey, 0)
+}
+
+// 全局监听只在页面「在场」时挂着：keep-alive 把本页停用（切到其他页面）后必须摘掉，
+// 否则终端页的粘贴/焦点/ESC 处理会跨页面生效。
+let globalBound = false
+function bindGlobalListeners() {
+  if (globalBound) return
+  globalBound = true
+  document.addEventListener('paste', onPasteEvent)
+  document.addEventListener('keydown', onGlobalKeydown)
   document.addEventListener('focusin', syncFocusKey, true)
-  document.addEventListener('focusout', () => setTimeout(syncFocusKey, 0), true)
-})
+  document.addEventListener('focusout', onDocFocusOut, true)
+}
+function unbindGlobalListeners() {
+  if (!globalBound) return
+  globalBound = false
+  document.removeEventListener('paste', onPasteEvent)
+  document.removeEventListener('keydown', onGlobalKeydown)
+  document.removeEventListener('focusin', syncFocusKey, true)
+  document.removeEventListener('focusout', onDocFocusOut, true)
+}
 
 // 快捷操作的目标集合：
 // 同步开启 → 所有已连接终端；否则 → 真正持有焦点的那个终端（没有则回退到 activeKey）。
@@ -247,6 +277,9 @@ async function refitAll() {
   await nextTick()
   await nextFrame()
   await nextTick()
+  // keep-alive 停用期间本页 DOM 已整体移出文档：此时量不到尺寸（FitAddon 本身也会返回空），
+  // 直接跳过，避免把错误的行列数上报给远端
+  if (pageRoot.value && !pageRoot.value.isConnected) return
   tabs.value.forEach((t) => {
     const term = terms.get(t.key)
     const fit = fitAddons.get(t.key)
@@ -441,7 +474,37 @@ function focusTerminalForPaste() {
   pasteInput.focus()
 }
 
+// 粘贴事件只接管「粘贴目标确实是终端」的那一种。
+// 这里曾经是 document 级全量接管：无论焦点在哪儿都 preventDefault() 再把文本写进当前终端，
+// 于是在对话框/侧栏的输入框里按 Ctrl+V 时，输入框里什么都没有、内容却跑进了 shell。
+// 现在的判断顺序：
+//   1) 普通输入框（对话框、侧栏、弹层里的 input / textarea / select、可编辑元素）→ 不干预；
+//   2) 弹层内部（对话框 / 下拉 / 确认框）→ 不干预，交给它们自己处理粘贴；
+//   3) 终端区域内的粘贴 → xterm 自己在 textarea/element 上处理（并 stopPropagation，
+//      根本不会冒泡到这里），这里只作为"粘贴目标是终端面板本身"时的兜底；
+//   4) 剪贴板 API 不可用时，右键「粘贴」把焦点放到隐藏输入框上，由这里把内容写进终端。
+function isPlainEditable(el) {
+  if (!el || !el.tagName) return false
+  const tag = el.tagName.toLowerCase()
+  if (tag === 'input' || tag === 'select') return true
+  // xterm 自己的隐藏输入框不算普通输入框：它承载终端粘贴，放行到下面的终端分支
+  if (tag === 'textarea') return !el.classList.contains('xterm-helper-textarea')
+  return el.isContentEditable === true
+}
+
+function inTerminalPane(el) {
+  return !!(el && el.closest && el.closest('.term-pane'))
+}
+
+const POPUP_SELECTOR = '.el-overlay, .el-popper, .el-message-box'
+
 function onPasteEvent(ev) {
+  const target = ev.target
+  if (target !== pasteInput) {
+    if (isPlainEditable(target)) return
+    if (target.closest && target.closest(POPUP_SELECTOR)) return
+    if (!inTerminalPane(target)) return
+  }
   const text = (ev.clipboardData && ev.clipboardData.getData('text')) || ''
   if (!text) return
   ev.preventDefault()
@@ -449,14 +512,36 @@ function onPasteEvent(ev) {
   if (pasteInput) pasteInput.blur()
 }
 
+// 右键菜单定位：默认出现在光标右下，但贴边时整体翻到光标另一侧。
+// 之前直接把 clientX/clientY 当坐标，在终端最底下几行（视口底部）右键时，
+// 菜单会有一大半落到窗口外面，用户根本点不到。
+const MENU_MARGIN = 8
+
 function openMenu(ev, term) {
-  menuPos.value = {x: ev.clientX, y: ev.clientY}
   hasSelection.value = !!term.getSelection()
+  menuReady.value = false
+  menuPos.value = {x: ev.clientX, y: ev.clientY}
   menuVisible.value = true
+  nextTick(() => {
+    const el = menuEl.value
+    if (!el) return
+    const r = el.getBoundingClientRect()
+    let x = ev.clientX
+    let y = ev.clientY
+    // 右/下放不下就翻到光标左侧/上方，再兜底夹到视口内（窗口很小时也不越界）
+    if (x + r.width + MENU_MARGIN > window.innerWidth) x = ev.clientX - r.width
+    if (y + r.height + MENU_MARGIN > window.innerHeight) y = ev.clientY - r.height
+    menuPos.value = {
+      x: Math.max(MENU_MARGIN, Math.min(x, window.innerWidth - r.width - MENU_MARGIN)),
+      y: Math.max(MENU_MARGIN, Math.min(y, window.innerHeight - r.height - MENU_MARGIN))
+    }
+    menuReady.value = true
+  })
 }
 
 function closeMenu() {
   menuVisible.value = false
+  menuReady.value = false
 }
 
 function onMenuCopy() {
@@ -542,8 +627,7 @@ async function waitForLayout() {
 
 onMounted(async () => {
   // 粘贴事件走「剪贴板 API 不可用」时的回退路径（隐藏输入框承载 Ctrl+V）
-  document.addEventListener('paste', onPasteEvent)
-  document.addEventListener('keydown', onGlobalKeydown)
+  bindGlobalListeners()
   await loadServers()
   await waitForLayout()
   addTab()
@@ -552,9 +636,40 @@ onMounted(async () => {
   refitAll()
 })
 
+// keep-alive 保活：从其他页面切回来时组件并没有重新创建（onMounted 不会再跑），
+// 所以"回到本页"要挂在这里。
+onActivated(async () => {
+  // 首次挂载后 Vue 也会触发一次 activated，此时 onMounted 的初始化还在进行中，
+  // 交给它处理即可，否则会重复开一个终端
+  if (initializing.value) return
+  bindGlobalListeners()
+  // 离开期间服务器列表可能在别处改了（新增/删除服务器），回来重新取一次
+  await loadServers()
+  // 从服务器列表点「打开终端」进来时路由带 serverId：本页不再重建，
+  // onMounted 里的 addTab() 不会重跑，这里补上同样的处理（同一个服务器可以再开一个窗口）
+  const sid = route.query.serverId
+  if (sid && servers.value.some(s => s.id === sid)) {
+    openNew(sid)
+  } else if (!tabs.value.length) {
+    // 离开前把终端全关了再切回来：仍然给出和首次进入一致的引导
+    addTab()
+  }
+  // 尺寸可能变了（窗口大小、侧栏状态），重新 fit 并把视口钉到底部
+  await refitAll()
+  // 把键盘焦点交回终端：切回来就能直接敲命令
+  focusTerm(activeKey.value)
+})
+
+// 切到其他页面：本页只是被"停用"，终端会话与 xterm 实例都继续活着
+// （输出仍在写入缓冲区，渲染由 xterm 的可见性暂停/恢复机制接管），
+// 这里只摘掉不该跨页面生效的全局监听。
+onDeactivated(() => {
+  unbindGlobalListeners()
+  closeMenu()
+})
+
 onBeforeUnmount(() => {
-  document.removeEventListener('paste', onPasteEvent)
-  document.removeEventListener('keydown', onGlobalKeydown)
+  unbindGlobalListeners()
   if (pasteInput && pasteInput.parentNode) pasteInput.parentNode.removeChild(pasteInput)
   pasteInput = null
   tabs.value.forEach(t => {
@@ -571,7 +686,7 @@ function onGlobalKeydown(ev) {
 </script>
 
 <template>
-  <div class="terminal-page">
+  <div ref="pageRoot" class="terminal-page">
     <!-- 标签栏：新建按钮跟随在最后一个标签右侧，标签过多时贴着标签栏最右侧 -->
     <div class="term-tabbar">
       <div ref="tabsRef" class="term-tabs">
@@ -651,7 +766,9 @@ function onGlobalKeydown(ev) {
     <div v-if="menuVisible" class="ctx-mask" @click="closeMenu" @contextmenu.prevent="closeMenu"></div>
     <div
       v-if="menuVisible"
+      ref="menuEl"
       class="ctx-menu"
+      :class="{ready: menuReady}"
       :style="{left: menuPos.x + 'px', top: menuPos.y + 'px'}"
     >
       <div class="ctx-item" :class="{disabled: !hasSelection}" @click="onMenuCopy">
@@ -950,7 +1067,10 @@ function onGlobalKeydown(ev) {
   border: 1px solid var(--line);
   border-radius: 10px;
   box-shadow: var(--el-box-shadow, 0 8px 24px rgba(0, 0, 0, .18));
+  /* 定位测量完成前先不可见：避免菜单先在光标处出现、再跳到边界内 */
+  visibility: hidden;
 }
+.ctx-menu.ready { visibility: visible; }
 .ctx-item {
   display: flex;
   align-items: center;

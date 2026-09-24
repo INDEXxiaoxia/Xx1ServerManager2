@@ -1,5 +1,5 @@
 <script setup>
-import {ref, computed, watch, onMounted, onBeforeUnmount, nextTick} from 'vue'
+import {ref, computed, onMounted, onActivated, onDeactivated, onBeforeUnmount, nextTick} from 'vue'
 import {useRouter} from 'vue-router'
 import {ElMessage, ElMessageBox} from 'element-plus'
 import {api} from '@/api'
@@ -151,17 +151,34 @@ function onDocClick() {
 function onDocKeydown(ev) {
   if (ev.key === 'Escape' && menu.value.visible) closeMenu()
 }
-onMounted(() => {
+// 侧栏随终端页一起被 keep-alive 保活，所以监听要能挂/摘
+// （页面被停用后还挂在 document 上，会在别的页面上响应点击与 ESC）
+let docBound = false
+function bindDocListeners() {
+  if (docBound) return
+  docBound = true
   document.addEventListener('click', onDocClick)
   document.addEventListener('keydown', onDocKeydown)
-})
-onBeforeUnmount(() => {
+}
+function unbindDocListeners() {
+  if (!docBound) return
+  docBound = false
   document.removeEventListener('click', onDocClick)
   document.removeEventListener('keydown', onDocKeydown)
-})
+}
+onMounted(bindDocListeners)
+onBeforeUnmount(unbindDocListeners)
 
-// 外部新增/删除预设后（预设页）切换回终端页时刷新一次
-watch(() => props.terminals.length, () => { /* 保持轻量，不主动刷新 */ })
+// keep-alive：随终端页一起被停用/激活（onActivated 在首次挂载后也会触发）
+onDeactivated(() => {
+  unbindDocListeners()
+  closeMenu()
+})
+// 回到终端页时重新拉一次预设：用户可能刚在「预设管理」页增删过
+onActivated(() => {
+  bindDocListeners()
+  load()
+})
 </script>
 
 <template>
