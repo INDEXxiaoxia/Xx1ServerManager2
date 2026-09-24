@@ -153,12 +153,12 @@ func TestPruneMonitorHistory(t *testing.T) {
 	defer st.Close()
 
 	now := time.Now()
-	// 前两条超期（25h / 30h 前），后三条在保留期内
+	// 保留期已改为 1 小时：前两条超期（90min / 3h 前），后三条在保留期内
 	stamps := []time.Time{
-		now.Add(-30 * time.Hour),
-		now.Add(-25 * time.Hour),
-		now.Add(-23 * time.Hour),
-		now.Add(-1 * time.Hour),
+		now.Add(-3 * time.Hour),
+		now.Add(-90 * time.Minute),
+		now.Add(-50 * time.Minute),
+		now.Add(-10 * time.Minute),
 		now,
 	}
 	for i, ts := range stamps {
@@ -167,11 +167,11 @@ func TestPruneMonitorHistory(t *testing.T) {
 		}
 	}
 	// 另一台服务器的数据同样受保留期约束（清理是全局的）
-	if err := st.AddMonitorPoint(&models.MonitorPoint{ServerID: "s2", Timestamp: now.Add(-26 * time.Hour)}); err != nil {
+	if err := st.AddMonitorPoint(&models.MonitorPoint{ServerID: "s2", Timestamp: now.Add(-2 * time.Hour)}); err != nil {
 		t.Fatalf("写入 s2 监控点失败: %v", err)
 	}
 
-	n, err := st.PruneMonitorHistory(now.Add(-24 * time.Hour))
+	n, err := st.PruneMonitorHistory(now.Add(-time.Hour))
 	if err != nil {
 		t.Fatalf("清理失败: %v", err)
 	}
@@ -186,7 +186,7 @@ func TestPruneMonitorHistory(t *testing.T) {
 	if len(points) != 3 {
 		t.Fatalf("保留期内应剩 3 条，got %d", len(points))
 	}
-	if points[0].Timestamp.Before(now.Add(-24 * time.Hour)) {
+	if points[0].Timestamp.Before(now.Add(-time.Hour)) {
 		t.Fatalf("超期数据未被清除: %+v", points[0])
 	}
 	if left, _ := st.GetMonitorHistory("s2", 100); len(left) != 0 {
@@ -194,7 +194,7 @@ func TestPruneMonitorHistory(t *testing.T) {
 	}
 
 	// 同一个截止时间再清一次：没有可删的，且不应报错
-	if n, err := st.PruneMonitorHistory(now.Add(-24 * time.Hour)); err != nil || n != 0 {
+	if n, err := st.PruneMonitorHistory(now.Add(-time.Hour)); err != nil || n != 0 {
 		t.Fatalf("重复清理应删除 0 行，got %d err=%v", n, err)
 	}
 
