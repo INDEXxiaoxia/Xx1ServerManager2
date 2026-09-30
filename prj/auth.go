@@ -46,6 +46,7 @@ func (a *App) Lock() error {
 	a.CloseFileClients()
 	a.closeAllTerminals()
 	a.closeAllDiskTasks()
+	a.closeAllAISessions()
 	return nil
 }
 

@@ -112,7 +112,13 @@ type CommandHistory struct {
 	Stderr     string     `json:"stderr"`
 	Duration   int64      `json:"duration"` // milliseconds
 	CreatedAt  time.Time  `json:"createdAt"`
+	// Source 命令来源：manual（用户手敲/单个执行）、batch（批量执行）、ai（AI 接管执行）
+	Source string `json:"source"`
+	// AISessionID AI 接管会话 id（source=ai 时有值），用于追溯"AI 这一轮都干了什么"
+	AISessionID string `json:"aiSessionId"`
 }
+
+// ---- 终端 AI ----
 
 // Settings 应用设置
 type Settings struct {
@@ -120,6 +126,117 @@ type Settings struct {
 	UploadTimeout  int    `json:"uploadTimeout"`
 	CommandTimeout int    `json:"commandTimeout"`
 	Theme          string `json:"theme"`
+}
+
+// AISettings AI 配置。
+// API Key 不随查询回传（只回 apiKeySet 告诉前端"已经存过一把"），
+// 保存时留空表示"不改动已存的 Key"。
+type AISettings struct {
+	BaseURL      string `json:"baseURL"`
+	APIKey       string `json:"apiKey"`
+	APIKeySet    bool   `json:"apiKeySet"`
+	Model        string `json:"model"`
+	MaxRounds    int    `json:"maxRounds"`
+	Timeout      int    `json:"timeout"`
+	ContextLines int    `json:"contextLines"`
+}
+
+// AITestResult 测试连通结果
+type AITestResult struct {
+	OK        bool   `json:"ok"`
+	Message   string `json:"message"`
+	LatencyMs int64  `json:"latencyMs"`
+	Model     string `json:"model"`
+	Endpoint  string `json:"endpoint"`
+}
+
+// AIContext 提供给 AI 的终端内容快照（UI 上要透明展示"到底把什么发出去了"）
+type AIContext struct {
+	TermID    string `json:"termId"`
+	Mode      string `json:"mode"`
+	Text      string `json:"text"`
+	Lines     int    `json:"lines"`
+	Bytes     int    `json:"bytes"`
+	Truncated bool   `json:"truncated"` // 超出读取上限，头尾保留、中间省略
+	Dropped   bool   `json:"dropped"`   // 起点已被环形缓冲丢弃（内容太久远）
+	Elided    bool   `json:"elided"`    // 重复行折叠过
+	SeqFrom   int64  `json:"seqFrom"`
+	SeqTo     int64  `json:"seqTo"`
+	Empty     bool   `json:"empty"`
+}
+
+// AICommand AI 给出的一条命令
+type AICommand struct {
+	Command string `json:"command"`
+	Risk    string `json:"risk"`   // low | medium | high
+	Reason  string `json:"reason"` // 风险说明（给用户看的）
+}
+
+// AIRequest 一次 AI 请求
+type AIRequest struct {
+	// SessionID 由前端生成：前端先订阅事件、再发起请求，避免极快失败时漏掉首个事件
+	SessionID string `json:"sessionId"`
+	TermID    string `json:"termId"`
+	ServerID  string `json:"serverId"`
+	Text      string `json:"text"`
+	Mode      string `json:"mode"`    // suggest | exec | takeover
+	Context   string `json:"context"` // selection | last50 | last200 | sinceLast | all
+	Lines     int    `json:"lines"`
+	Selection string `json:"selection"`
+	MaxRounds int    `json:"maxRounds"`
+	// ContinueSession 为真表示"在停下的任务上追加新要求"（复用已有上下文）
+	ContinueSession bool `json:"continueSession"`
+}
+
+// AIResponse 建议 / 直接执行模式的一次回复
+type AIResponse struct {
+	SessionID string      `json:"sessionId"`
+	Text      string      `json:"text"`
+	Commands  []AICommand `json:"commands"`
+	Context   AIContext   `json:"context"`
+	Model     string      `json:"model"`
+	ElapsedMs int64       `json:"elapsedMs"`
+	Truncated bool        `json:"truncated"`
+}
+
+// AIExecResult 一条命令在终端里执行的结果
+type AIExecResult struct {
+	Command   string `json:"command"`
+	ExitCode  int    `json:"exitCode"`
+	Output    string `json:"output"`
+	Truncated bool   `json:"truncated"`
+	// Status done | blocked | timeout | interrupted | cancelled | error
+	Status    string `json:"status"`
+	Message   string `json:"message"`
+	ElapsedMs int64  `json:"elapsedMs"`
+	Risk      string `json:"risk"`
+}
+
+// AIStep 接管模式中的一轮（后端推事件、前端渲染成命令卡 + 结果卡）
+type AIStep struct {
+	Round   int           `json:"round"`
+	Thought string        `json:"thought"`
+	Command string        `json:"command"`
+	Risk    string        `json:"risk"`
+	State   string        `json:"state"` // running | done | failed | blocked
+	Result  *AIExecResult `json:"result"`
+}
+
+// AIState 接管会话状态
+type AIState struct {
+	SessionID string `json:"sessionId"`
+	TermID    string `json:"termId"`
+	// State running | paused | stopped | done | error | maxrounds
+	State string `json:"state"`
+	// Kind 暂停原因分类，前端据此决定"要不要把键盘交还给用户"：
+	//   input     等待输入（密码 / y-n 确认）→ 交还键盘与粘贴
+	//   altscreen 进了全屏交互程序（vim/top）→ 交还键盘，让用户退出程序
+	//   stall     长时间没有输出 → 保持锁定（命令还在跑，乱敲会搞乱）
+	Kind      string `json:"kind"`
+	Round     int    `json:"round"`
+	MaxRounds int    `json:"maxRounds"`
+	Message   string `json:"message"`
+	At        int64  `json:"at"`
 }
 
 // FileEntry 远程文件条目

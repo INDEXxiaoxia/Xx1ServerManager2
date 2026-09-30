@@ -133,11 +133,25 @@ func (s *Store) init() error {
 	return s.migrate()
 }
 
-// migrate 幂等增量迁移：老库补 disk_json 列与查询索引。
+// migrate 幂等增量迁移：老库补 disk_json / source / ai_session_id 列与查询索引。
 // 先查 PRAGMA 再决定是否 ALTER，重复启动不会报错；老库升级后历史数据照常可读。
 func (s *Store) migrate() error {
 	if !s.hasColumn("monitor_history", "disk_json") {
 		if _, err := s.db.Exec(`ALTER TABLE monitor_history ADD COLUMN disk_json TEXT`); err != nil &&
+			!strings.Contains(err.Error(), "duplicate column") {
+			return err
+		}
+	}
+	// command_history 记录命令来源：manual（用户手敲/批量）、batch、ai（AI 接管执行），
+	// 让"AI 到底在服务器上做了什么"有据可查
+	if !s.hasColumn("command_history", "source") {
+		if _, err := s.db.Exec(`ALTER TABLE command_history ADD COLUMN source TEXT`); err != nil &&
+			!strings.Contains(err.Error(), "duplicate column") {
+			return err
+		}
+	}
+	if !s.hasColumn("command_history", "ai_session_id") {
+		if _, err := s.db.Exec(`ALTER TABLE command_history ADD COLUMN ai_session_id TEXT`); err != nil &&
 			!strings.Contains(err.Error(), "duplicate column") {
 			return err
 		}
@@ -512,9 +526,12 @@ func disksFromJSON(raw string, mp *models.MonitorPoint) []models.DiskInfo {
 func (s *Store) AddCommandHistory(h *models.CommandHistory) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	if h.Source == "" {
+		h.Source = "manual"
+	}
 	_, err := s.db.Exec(
-		`INSERT INTO command_history (server_id,server_name,command,status,exit_code,stdout,stderr,duration,created_at) VALUES (?,?,?,?,?,?,?,?,?)`,
-		h.ServerID, h.ServerName, h.Command, string(h.Status), h.ExitCode, h.Stdout, h.Stderr, h.Duration, h.CreatedAt.Format(time.RFC3339),
+		`INSERT INTO command_history (server_id,server_name,command,status,exit_code,stdout,stderr,duration,created_at,source,ai_session_id) VALUES (?,?,?,?,?,?,?,?,?,?,?)`,
+		h.ServerID, h.ServerName, h.Command, string(h.Status), h.ExitCode, h.Stdout, h.Stderr, h.Duration, h.CreatedAt.Format(time.RFC3339), h.Source, h.AISessionID,
 	)
 	return err
 }
@@ -526,7 +543,7 @@ func (s *Store) GetCommandHistory(limit int) ([]models.CommandHistory, error) {
 		limit = 100
 	}
 	rows, err := s.db.Query(
-		`SELECT id,server_id,server_name,command,status,exit_code,stdout,stderr,duration,created_at FROM command_history ORDER BY id DESC LIMIT ?`,
+		`SELECT id,server_id,server_name,command,status,exit_code,stdout,stderr,duration,created_at,COALESCE(source,''),COALESCE(ai_session_id,'') FROM command_history ORDER BY id DESC LIMIT ?`,
 		limit,
 	)
 	if err != nil {
@@ -537,7 +554,7 @@ func (s *Store) GetCommandHistory(limit int) ([]models.CommandHistory, error) {
 	for rows.Next() {
 		var h models.CommandHistory
 		var status, created string
-		if err := rows.Scan(&h.ID, &h.ServerID, &h.ServerName, &h.Command, &status, &h.ExitCode, &h.Stdout, &h.Stderr, &h.Duration, &created); err != nil {
+		if err := rows.Scan(&h.ID, &h.ServerID, &h.ServerName, &h.Command, &status, &h.ExitCode, &h.Stdout, &h.Stderr, &h.Duration, &created, &h.Source, &h.AISessionID); err != nil {
 			return nil, err
 		}
 		h.Status = models.TaskStatus(status)

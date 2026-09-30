@@ -23,6 +23,76 @@ type TerminalSession struct {
 	stdin    io.Writer
 	out      io.ReadCloser
 	closed   bool
+
+	// tail 最近若干 KB 的原始输出（含 ANSI），供 AI 读取终端内容使用。
+	// 输出本身仍然实时推给前端 xterm，这里只是额外留一份可回看的副本。
+	tail *terminalTail
+	// aiSeq 最近一次由 AI 注入命令时的输出偏移（「自上次 AI 命令以来」这一档要用）
+	aiSeq int64
+}
+
+// terminalTailSize 每个终端会话保留的原始输出上限。
+// 512KB 足够放下一次长安装的完整输出，又不至于让多标签会话把内存吃掉。
+const terminalTailSize = 512 * 1024
+
+// terminalTail 环形输出缓冲：只保留最近 terminalTailSize 字节，
+// 但保留"全局偏移"（seq/base），因此可以精确地取"从某次命令之后到现在"的片段。
+type terminalTail struct {
+	mu   sync.Mutex
+	data []byte
+	base int64 // data[0] 对应的全局偏移
+	seq  int64 // 累计写入的字节数
+}
+
+func newTerminalTail() *terminalTail {
+	return &terminalTail{data: make([]byte, 0, terminalTailSize)}
+}
+
+// append 追加输出（超出上限时从头部丢弃）
+func (t *terminalTail) append(p []byte) {
+	if len(p) == 0 {
+		return
+	}
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	t.seq += int64(len(p))
+	if len(p) >= terminalTailSize {
+		// 单次就超过整个缓冲：只留最后一段
+		t.data = append(t.data[:0], p[len(p)-terminalTailSize:]...)
+		t.base = t.seq - int64(len(t.data))
+		return
+	}
+	t.data = append(t.data, p...)
+	if len(t.data) > terminalTailSize {
+		drop := len(t.data) - terminalTailSize
+		t.data = append(t.data[:0], t.data[drop:]...)
+		t.base += int64(drop)
+	}
+}
+
+// snapshot 取 [from, now) 的原始字节；from 早于缓冲区起点时 truncated=true（说明这段已被丢弃）
+func (t *terminalTail) snapshot(from int64) (data []byte, fromActual, to int64, truncated bool) {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	to = t.seq
+	if from < t.base {
+		from = t.base
+		truncated = true
+	}
+	if from > to {
+		from = to
+	}
+	start := int(from - t.base)
+	out := make([]byte, len(t.data)-start)
+	copy(out, t.data[start:])
+	return out, from, to, truncated
+}
+
+// end 当前输出偏移
+func (t *terminalTail) end() int64 {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	return t.seq
 }
 
 // TerminalOpen 打开新的 SSH 终端会话
@@ -44,6 +114,7 @@ func (a *App) TerminalOpen(serverID string, cols, rows int) (string, error) {
 	id := uuid.NewString()
 	ts := &TerminalSession{
 		ID: id, ServerID: serverID, client: c, sess: sess, stdin: stdin, out: out,
+		tail: newTerminalTail(),
 	}
 
 	a.terminalMu.Lock()
@@ -56,6 +127,8 @@ func (a *App) TerminalOpen(serverID string, cols, rows int) (string, error) {
 		for {
 			n, rerr := out.Read(buf)
 			if n > 0 {
+				// 先留副本再推送：两边都拿到同一份原始字节（含 ANSI）
+				ts.tail.append(buf[:n])
 				runtime.EventsEmit(a.ctx, "terminal:data:"+id, string(buf[:n]))
 			}
 			if rerr != nil {
@@ -193,6 +266,8 @@ func (a *App) TerminalClose(id string) error {
 	ts, ok := a.terminals[id]
 	delete(a.terminals, id)
 	a.terminalMu.Unlock()
+	// 终端关了，挂在它上面的 AI 会话也一并收掉（对话上下文只活在内存里）
+	a.dropAISessionsForTerm(id)
 	if !ok {
 		return nil
 	}

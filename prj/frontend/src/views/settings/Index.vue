@@ -15,6 +15,79 @@ const configDir = ref('')
 const configDirExists = ref(false)
 const openingDir = ref(false)
 
+// ---- AI 设置 ----
+// 常见服务商的 OpenAI 兼容地址（实现时按各家官方文档核对过）。
+// 填到 /v1 为止即可，程序会自己拼 /chat/completions。
+const AI_PRESETS = [
+  {name: 'DeepSeek', baseURL: 'https://api.deepseek.com/v1', model: 'deepseek-chat'},
+  {name: '通义千问（兼容模式）', baseURL: 'https://dashscope.aliyuncs.com/compatible-mode/v1', model: 'qwen-plus'},
+  {name: 'OpenAI', baseURL: 'https://api.openai.com/v1', model: 'gpt-4o-mini'},
+  {name: '硅基流动', baseURL: 'https://api.siliconflow.cn/v1', model: 'deepseek-ai/DeepSeek-V3'},
+  {name: '本地 Ollama', baseURL: 'http://localhost:11434/v1', model: 'qwen2.5:14b'},
+  {name: '自定义', baseURL: '', model: ''}
+]
+const ai = reactive({
+  baseURL: '', apiKey: '', apiKeySet: false, model: '',
+  maxRounds: 20, timeout: 60, contextLines: 200
+})
+const aiPreset = ref('')
+const aiSaving = ref(false)
+const aiTesting = ref(false)
+const aiTestMsg = ref('')
+const aiTestOk = ref(false)
+
+async function loadAI() {
+  try {
+    const s = await api.getAISettings()
+    Object.assign(ai, s, {apiKey: ''}) // Key 不回传明文，输入框留空表示"不修改"
+    const hit = AI_PRESETS.find(p => p.baseURL && p.baseURL === s.baseURL)
+    aiPreset.value = hit ? hit.name : (s.baseURL ? '自定义' : '')
+  } catch (e) {
+    /* 未配置时忽略 */
+  }
+}
+
+function applyPreset(name) {
+  const p = AI_PRESETS.find(x => x.name === name)
+  if (!p) return
+  if (p.baseURL) ai.baseURL = p.baseURL
+  if (p.model) ai.model = p.model
+}
+
+async function saveAI() {
+  aiSaving.value = true
+  aiTestMsg.value = ''
+  try {
+    await api.saveAISettings({...ai})
+    ElMessage.success('AI 设置已保存')
+    await loadAI()
+  } catch (e) {
+    ElMessage.error('保存失败：' + e)
+  } finally {
+    aiSaving.value = false
+  }
+}
+
+async function testAI() {
+  aiTesting.value = true
+  aiTestMsg.value = ''
+  try {
+    const r = await api.testAIConnection()
+    aiTestOk.value = !!r.ok
+    if (r.ok) {
+      aiTestMsg.value = `✅ 连通成功 · 模型 ${r.model || '—'} · ${r.latencyMs}ms`
+    } else {
+      // 失败时把状态码与响应体原样带出来，用户才分得清是 Key、地址还是模型名的问题
+      aiTestMsg.value = '❌ ' + (r.message || '失败')
+    }
+  } catch (e) {
+    aiTestOk.value = false
+    aiTestMsg.value = '❌ ' + e
+  } finally {
+    aiTesting.value = false
+  }
+}
+
 async function load() {
   const s = await api.getSettings()
   Object.assign(settings, s)
@@ -28,6 +101,7 @@ async function load() {
   } catch (e) {
     configDir.value = ''
   }
+  await loadAI()
 }
 onMounted(load)
 
@@ -135,7 +209,67 @@ async function setPassword() {
       </el-form>
     </div>
 
-    <div class="card">
+    <div class="card mb-12">
+      <h3 class="card-title">AI 设置（SSH 终端的 AI 助手）</h3>
+      <el-form label-width="120px" class="mt-12">
+        <el-form-item label="常用预设">
+          <el-select v-model="aiPreset" style="width: 260px" placeholder="选一个常见服务商自动填地址" @change="applyPreset">
+            <el-option v-for="p in AI_PRESETS" :key="p.name" :label="p.name" :value="p.name" />
+            <el-option label="自定义" value="自定义" />
+          </el-select>
+          <span class="text-muted field-hint">选完仍可手动改下面的地址</span>
+        </el-form-item>
+
+        <el-form-item label="接口地址">
+          <el-input v-model="ai.baseURL" placeholder="https://api.deepseek.com/v1" style="width: 420px" />
+          <div class="field-hint text-muted">
+            填到 <b>/v1</b> 结尾即可，程序会自动拼接 <span class="mono">/chat/completions</span>；
+            不要填完整的接口路径。
+          </div>
+        </el-form-item>
+
+        <el-form-item label="API Key">
+          <el-input
+            v-model="ai.apiKey"
+            type="password"
+            show-password
+            style="width: 420px"
+            :placeholder="ai.apiKeySet ? '已保存（留空表示不修改）' : 'sk-xxxxxxxx'"
+          />
+          <div class="field-hint text-muted">
+            用主密码派生密钥加密后保存在本地数据库，不会明文落盘。
+          </div>
+        </el-form-item>
+
+        <el-form-item label="模型">
+          <el-input v-model="ai.model" placeholder="deepseek-chat" style="width: 260px" />
+        </el-form-item>
+
+        <el-form-item label="接管最大轮数">
+          <el-input-number v-model="ai.maxRounds" :min="1" :max="100" />
+          <span class="text-muted field-hint">完全接管模式下最多自动执行多少轮，达到上限会暂停并等你追加要求</span>
+        </el-form-item>
+
+        <el-form-item label="请求超时(秒)">
+          <el-input-number v-model="ai.timeout" :min="5" :max="600" />
+        </el-form-item>
+
+        <el-form-item label="终端上下文行数">
+          <el-input-number v-model="ai.contextLines" :min="20" :max="2000" :step="50" />
+          <span class="text-muted field-hint">每次问 AI 时附带终端最近多少行，行数越多越费 token</span>
+        </el-form-item>
+
+        <el-form-item>
+          <el-button type="primary" :loading="aiSaving" @click="saveAI">保存 AI 设置</el-button>
+          <el-button :loading="aiTesting" @click="testAI">
+            <el-icon><Connection /></el-icon>&nbsp;测试连通
+          </el-button>
+          <span v-if="aiTestMsg" class="test-msg" :class="{ok: aiTestOk}">{{ aiTestMsg }}</span>
+        </el-form-item>
+      </el-form>
+    </div>
+
+    <div class="card mb-12">
       <h3 class="card-title">安全</h3>
       <div class="flex-between mt-12">
         <div class="sec-info">
@@ -172,6 +306,31 @@ async function setPassword() {
 </template>
 
 <style scoped>
+/* AI 设置里的说明小字：单独占一行，不与输入框挤在一排 */
+.field-hint {
+  font-size: 12px;
+  line-height: 1.7;
+  margin-left: 10px;
+  max-width: 520px;
+}
+.el-form-item .field-hint {
+  display: block;
+  margin-left: 0;
+  margin-top: 4px;
+}
+.el-form-item .field-hint.ml-inline {
+  display: inline;
+  margin-left: 10px;
+}
+.test-msg {
+  margin-left: 12px;
+  font-size: 12px;
+  color: var(--red);
+  word-break: break-all;
+}
+.test-msg.ok {
+  color: var(--green);
+}
 .card-title {
   position: relative;
   display: inline-block;

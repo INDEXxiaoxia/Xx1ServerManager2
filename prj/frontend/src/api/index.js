@@ -47,6 +47,20 @@ export const api = {
   getConfigDirInfo: () => App.GetConfigDirInfo(),
   openConfigDir: () => App.OpenConfigDir(),
 
+  // 终端 AI（ChatGPT 兼容 OpenAI 协议）
+  // 检测类调用都要"先订阅 ai:* 事件、再发起请求"——sessionId 由前端生成，
+  // 否则极快失败时（例如 Key 无效）首个事件会在订阅之前发出，界面会一直转圈。
+  getAISettings: () => App.GetAISettings(),
+  saveAISettings: (s) => App.SaveAISettings(s),
+  testAIConnection: () => App.TestAIConnection(),
+  aiChat: (req) => App.AIChat(req),
+  aiExecOne: (termId, sessionId, command) => App.AIExecOne(termId, sessionId, command),
+  aiStartTakeover: (req) => App.AIStartTakeover(req),
+  aiStopTakeover: (sessionId) => App.AIStopTakeover(sessionId),
+  aiTakeoverControl: (sessionId, action) => App.AITakeoverControl(sessionId, action),
+  aiReset: (termId) => App.AIReset(termId),
+  aiTerminalSnapshot: (termId, mode, lines, selection) => App.AITerminalSnapshot(termId, mode, lines, selection),
+
   // 批量上传/执行
   startBatchUpload: (serverIds, localPaths, remoteDir) => App.StartBatchUpload(serverIds, localPaths, remoteDir),
   startBatchCommand: (serverIds, command, timeout) => App.StartBatchCommand(serverIds, command, timeout),

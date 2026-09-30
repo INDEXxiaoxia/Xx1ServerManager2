@@ -23,11 +23,95 @@ const dialogVisible = ref(false)
 const selectedServer = ref('')
 const tabsRef = ref(null)
 
-// 侧栏（展开状态本地记忆）与同步操作
-const SIDEBAR_KEY = 'xx1.terminal.sidebar'
-const sidebarOpen = ref(localStorage.getItem(SIDEBAR_KEY) === '1')
+// 右侧面板：像编辑器的侧边栏一样，用「页签」表示当前展开哪一块。
+// '' = 收起（只留一排竖着的展开按钮）| 'presets' = 预设操作 | 'ai' = AI 辅助
+const SIDEBAR_TAB_KEY = 'xx1.terminal.sidebarTab'
+const SIDEBAR_KEY = 'xx1.terminal.sidebar' // 旧键，仅用于迁移
+function initialSidebarTab() {
+  const saved = localStorage.getItem(SIDEBAR_TAB_KEY)
+  if (saved === 'presets' || saved === 'ai' || saved === '') return saved
+  // 没有新键时按旧键（'1' = 展开）迁移一次
+  return localStorage.getItem(SIDEBAR_KEY) === '1' ? 'presets' : ''
+}
+const sidebarTab = ref(initialSidebarTab())
+const sidebarOpen = computed(() => !!sidebarTab.value)
+watch(sidebarTab, (v) => localStorage.setItem(SIDEBAR_TAB_KEY, v))
+
 const syncMode = ref(false)
-watch(sidebarOpen, (v) => localStorage.setItem(SIDEBAR_KEY, v ? '1' : '0'))
+
+// ---- AI 接管状态 ----
+// AI 面板把状态转交上来：full 表示"完全接管"。此时锁住终端（标签/键盘/粘贴），
+// 但 paused + kind=input 时必须把键盘**交还**给用户——密码得他自己输。
+// 所有提示都是覆盖层，不改变页面结构，也不会让终端重新排版。
+const takeover = ref({
+  active: false, full: false, paused: false, kind: '', locked: false,
+  sessionId: '', round: 0, maxRounds: 0, message: ''
+})
+const takeoverFull = computed(() => !!takeover.value.full)
+// 键盘/粘贴是否被接管收回（暂停等输入时会放行）
+const inputLocked = computed(() => !!takeover.value.locked)
+
+function onTakeoverUpdate(st) {
+  const next = st || {
+    active: false, full: false, paused: false, kind: '', locked: false,
+    sessionId: '', round: 0, maxRounds: 0, message: ''
+  }
+  const wasFull = takeoverFull.value
+  takeover.value = next
+  if (next.full && !wasFull) {
+    // 接管期间禁止多终端并行：同步模式会自动关掉
+    if (syncMode.value) {
+      syncMode.value = false
+      ElMessage.warning('AI 接管期间已自动关闭「同步操作」（接管只对当前终端生效）')
+    }
+    ElMessage.info('AI 已接管当前终端：需要你输入密码时终端会自动解锁并提示')
+  }
+  if (!next.full && wasFull) {
+    ElMessage.success('AI 接管已结束，终端已恢复可操作')
+  }
+}
+
+// 紧急释放：接管中连按 3 次 Esc 立即停止（防止界面卡住时点不到「停止」）
+let escCount = 0
+let escTimer = null
+async function emergencyStop() {
+  if (!takeover.value.sessionId) return
+  try {
+    await api.aiStopTakeover(takeover.value.sessionId)
+    ElMessage.warning('已触发紧急停止（连按 3 次 Esc）')
+  } catch (e) {
+    ElMessage.error('停止失败：' + e)
+  }
+}
+async function stopTakeover() {
+  if (!takeover.value.sessionId) return
+  try {
+    await api.aiStopTakeover(takeover.value.sessionId)
+  } catch (e) {
+    ElMessage.error('停止失败：' + e)
+  }
+}
+// 暂停时（等密码/等确认）：把键盘交还用户后，由用户点这个按钮告诉 AI 继续
+async function continueTakeover() {
+  if (!takeover.value.sessionId) return
+  try {
+    await api.aiTakeoverControl(takeover.value.sessionId, 'continue')
+  } catch (e) {
+    ElMessage.error('操作失败：' + e)
+  }
+}
+async function ctrlCTakeover() {
+  if (!takeover.value.sessionId) return
+  try {
+    await api.aiTakeoverControl(takeover.value.sessionId, 'ctrlc')
+  } catch (e) {
+    ElMessage.error('操作失败：' + e)
+  }
+}
+
+function openSidebarTab(t) {
+  sidebarTab.value = sidebarTab.value === t ? '' : t
+}
 
 const activeTab = computed(() => tabs.value.find(t => t.key === activeKey.value) || null)
 
@@ -120,6 +204,15 @@ async function initTerminal(key) {
   // 输入 -> 后端；开启同步操作时把输入广播给其他终端。
 // 以键盘真实输入为准：谁在接收键盘事件，谁就是焦点终端（顺带纠正高亮状态）。
   term.onData((data) => {
+    // AI 接管中收回键盘：手敲的命令与 AI 注入的命令交错会直接搞乱 shell。
+    // 例外：暂停等输入（密码 / y-n 确认 / 退出 vim）时键盘要交还给用户 —— 密码只能自己输。
+    if (inputLocked.value) {
+      if (!takeoverHintShown) {
+        takeoverHintShown = true
+        ElMessage.warning('AI 接管中，请勿操作；需要手动介入请先点「停止」')
+      }
+      return
+    }
     if (activeKey.value !== key) activeKey.value = key
     ignoreSessionError(api.terminalWrite(termId, data))
     if (syncMode.value) broadcastInput(key, data)
@@ -146,6 +239,11 @@ async function initTerminal(key) {
 // 因此所有切换都走这里：改状态 → 立即把焦点真正交给 xterm。
 function activateTab(key) {
   if (!key) return
+  // 接管中禁止切换终端：AI 的命令只注入被接管的那个终端，切走会让界面与实际执行错位
+  if (takeoverFull.value && key !== activeKey.value) {
+    blockedByTakeover('切换终端')
+    return
+  }
   // 幂等：已经在激活态就只确保焦点，不再走一遍流程（避免 focus 事件递归）
   if (activeKey.value !== key) activeKey.value = key
   closeMenu()
@@ -240,6 +338,17 @@ function unbindGlobalListeners() {
   document.removeEventListener('focusout', onDocFocusOut, true)
 }
 
+// 接管期间只提示一次，避免每次按键都弹一条
+let takeoverHintShown = false
+watch(inputLocked, (v) => { if (!v) takeoverHintShown = false })
+
+// 弹出提示的辅助（多处用于"接管中禁止操作"）
+function blockedByTakeover(what) {
+  if (!takeoverFull.value) return false
+  ElMessage.warning(`AI 接管中，无法${what}；请先点「停止」`)
+  return true
+}
+
 // 快捷操作的目标集合：
 // 同步开启 → 所有已连接终端；否则 → 真正持有焦点的那个终端（没有则回退到 activeKey）。
 // 用真实焦点而不是 activeKey，才能避免"命令发给了没在接收输入的那个窗口"。
@@ -316,6 +425,10 @@ function broadcastInput(fromKey, data) {
 }
 
 async function toggleSync() {
+  if (takeoverFull.value) {
+    blockedByTakeover('开启/关闭同步操作')
+    return
+  }
   syncMode.value = !syncMode.value
   if (syncMode.value) {
     if (!tabs.value.length) {
@@ -379,17 +492,18 @@ async function onQuickJump(path) {
   }
 }
 
-function toggleSidebar() {
-  // 侧栏宽度变化后的重新 fit 交给 sidebarOpen 的 watch（flush: 'post'）统一处理
-  sidebarOpen.value = !sidebarOpen.value
-}
-
 // ---- 复制 / 粘贴 ----
 function activeTerm() {
   return terms.get(activeKey.value) || null
 }
 
 function writeToTerm(text) {
+  // 接管中禁止粘贴会挡住"粘贴长密码"这种正常需求，所以只在真正运行时拦，
+  // 暂停等输入时放行（粘贴走 bracketed paste，与手敲等价）
+  if (inputLocked.value) {
+    ElMessage.warning('AI 正在执行命令，暂时不能粘贴；等它停下来再操作')
+    return
+  }
   const tab = tabs.value.find(t => t.key === activeKey.value)
   const term = activeTerm()
   if (!tab || !tab.termId || !text) return
@@ -570,6 +684,7 @@ function onMenuSelectAll() {
 }
 
 function closeTab(key) {
+  if (blockedByTakeover('关闭终端标签')) return
   const tab = tabs.value.find(t => t.key === key)
   if (!tab) return
   ignoreSessionError(api.terminalClose(tab.termId))
@@ -587,6 +702,7 @@ function closeTab(key) {
 }
 
 function addTab() {
+  if (blockedByTakeover('新建终端')) return
   if (!servers.value.length) { ElMessage.warning('请先在服务器列表添加服务器'); return }
   if (route.query.serverId && servers.value.some(s => s.id === route.query.serverId)) {
     openNew(route.query.serverId)
@@ -679,9 +795,22 @@ onBeforeUnmount(() => {
   terms.forEach(t => t.dispose())
 })
 
-// Esc 收起右键菜单
+// Esc 收起右键菜单；接管中连按 3 次 Esc = 紧急停止
 function onGlobalKeydown(ev) {
-  if (ev.key === 'Escape') closeMenu()
+  if (ev.key === 'Escape') {
+    closeMenu()
+    if (takeoverFull.value) {
+      escCount++
+      if (escTimer) clearTimeout(escTimer)
+      escTimer = setTimeout(() => { escCount = 0 }, 1500)
+      if (escCount >= 3) {
+        escCount = 0
+        emergencyStop()
+      } else {
+        ElMessage.info(`再按 ${3 - escCount} 次 Esc 可紧急停止 AI 接管`)
+      }
+    }
+  }
 }
 </script>
 
@@ -695,15 +824,15 @@ function onGlobalKeydown(ev) {
           :id="'tab-' + t.key"
           :key="t.key"
           class="term-tab"
-          :class="{active: activeKey === t.key}"
+          :class="{active: activeKey === t.key, locked: takeoverFull && activeKey !== t.key}"
           @click="activateTab(t.key)"
         >
           <span class="tab-title">{{ t.title }}</span>
           <el-icon v-if="t.connected === false" class="tab-off" title="会话已断开"><WarningFilled /></el-icon>
-          <el-icon class="tab-close" @click.stop="closeTab(t.key)"><Close /></el-icon>
+          <el-icon class="tab-close" :class="{disabled: takeoverFull}" @click.stop="closeTab(t.key)"><Close /></el-icon>
         </div>
-        <el-tooltip content="新建终端" placement="bottom">
-          <button class="tab-add" @click="addTab">
+        <el-tooltip :content="takeoverFull ? 'AI 接管中，无法新建终端' : '新建终端'" placement="bottom">
+          <button class="tab-add" :class="{disabled: takeoverFull}" @click="addTab">
             <el-icon><Plus /></el-icon>
           </button>
         </el-tooltip>
@@ -712,7 +841,34 @@ function onGlobalKeydown(ev) {
 
     <div class="term-main">
       <!-- 终端区域：单窗口叠层 或 同步 2×2 网格 -->
-      <div class="term-body" :class="{sync: syncMode}">
+      <div class="term-body" :class="{sync: syncMode, takeover: takeoverFull}">
+        <!-- AI 接管的视觉提示：纯覆盖层（pointer-events 默认穿透），
+             不占布局、不改变终端尺寸，因此不需要重新 fit。 -->
+        <div v-if="takeoverFull" class="tk-overlay">
+          <svg class="tk-svg" aria-hidden="true">
+            <rect class="tk-l1" />
+            <rect class="tk-l2" />
+          </svg>
+          <!-- 常驻：右上角小徽标，不挡内容 -->
+          <div class="tk-badge">
+            <i class="tk-pulse" />
+            <span>AI 接管中</span>
+            <span v-if="takeover.round" class="tk-round">
+              {{ takeover.round }}<template v-if="takeover.maxRounds">/{{ takeover.maxRounds }}</template>
+            </span>
+            <button class="tk-stop" @click="stopTakeover">停止</button>
+          </div>
+          <!-- 需要你处理时才展开成醒目的提示条（密码 / 确认 / 退出交互程序） -->
+          <div v-if="takeover.paused" class="tk-alert" :class="takeover.kind">
+            <span class="tk-alert-title">{{ takeover.kind === 'input' ? '需要你输入' : takeover.kind === 'altscreen' ? '需要你退出程序' : '可能卡住了' }}</span>
+            <span class="tk-alert-msg">{{ takeover.message }}</span>
+            <span class="tk-alert-actions">
+              <el-button v-if="takeover.kind === 'input' || takeover.kind === 'altscreen'" size="small" type="primary" @click="continueTakeover">输入完成，继续</el-button>
+              <el-button v-else size="small" type="primary" @click="continueTakeover">继续等待</el-button>
+              <el-button size="small" @click="ctrlCTakeover">发送 Ctrl+C</el-button>
+            </span>
+          </div>
+        </div>
         <div
           v-for="(t, i) in tabs"
           :key="t.key"
@@ -739,26 +895,37 @@ function onGlobalKeydown(ev) {
         </div>
       </div>
 
-      <!-- 右侧快捷侧边栏；收起时只留一条贴着右边缘的展开条 -->
-      <button
-        v-if="!sidebarOpen"
-        class="sidebar-handle"
-        title="展开快捷面板（预设命令 / 预设路径 / 同步操作）"
-        @click="toggleSidebar"
-      >
-        <el-icon><DArrowLeft /></el-icon>
-        <span class="handle-text">快捷面板</span>
-      </button>
+      <!-- 右侧：收起时是一排竖着的展开按钮（像编译器的侧边栏），
+           展开时是带页签的面板；两块内容各占一个页签。 -->
+      <div v-show="!sidebarOpen" class="sidebar-rail">
+        <button class="rail-btn" title="预设操作：预设命令 / 预设路径" @click="openSidebarTab('presets')">
+          <el-icon><DArrowLeft /></el-icon>
+          <span class="rail-text">预设操作</span>
+        </button>
+        <button
+          class="rail-btn"
+          :class="{danger: takeoverFull}"
+          title="AI 辅助：建议 / 直接执行 / 完全接管"
+          @click="openSidebarTab('ai')"
+        >
+          <el-icon><MagicStick /></el-icon>
+          <span class="rail-text">AI 辅助</span>
+          <i v-if="takeoverFull" class="rail-dot" :class="{paused: takeover.paused}" />
+        </button>
+      </div>
       <QuickPanel
-        v-else
+        v-show="sidebarOpen"
         class="sidebar"
         :active-terminal="activeTab"
         :terminals="tabs"
         :sync="syncMode"
+        :tab="sidebarTab"
         @update:sync="toggleSync"
+        @update:tab="v => sidebarTab = v"
         @insert="onQuickInsert"
         @jump="onQuickJump"
-        @close="toggleSidebar"
+        @update:takeover="onTakeoverUpdate"
+        @close="sidebarTab = ''"
       />
     </div>
 
@@ -869,6 +1036,20 @@ function onGlobalKeydown(ev) {
 .term-tab .tab-title { font-size: 13px; max-width: 160px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .term-tab .tab-close:hover { color: var(--red); }
 .term-tab .tab-off { color: var(--red); }
+/* 接管中：非当前标签与新建/关闭按钮都置灰，明确"现在不能切" */
+.term-tab.locked {
+  opacity: .45;
+  cursor: not-allowed;
+}
+.term-tab .tab-close.disabled {
+  opacity: .4;
+  pointer-events: none;
+}
+.tab-add.disabled {
+  opacity: .4;
+  pointer-events: none;
+}
+
 /* 新建按钮不单独占行：紧跟在最后一个标签右侧；标签过多被挤出时自动贴在最右 */
 .tab-add {
   flex: 0 0 auto;
@@ -901,6 +1082,193 @@ function onGlobalKeydown(ev) {
   position: relative;
   min-height: 0;
 }
+/* AI 完全接管：内发光 + 沿着边框跑的光（见 .tk-overlay），
+   全部是覆盖层，不改终端尺寸、不影响页面结构。 */
+.term-body.takeover {
+  box-shadow: inset 0 0 42px -12px var(--blue-glow-strong),
+              inset 0 0 0 1px var(--blue-soft-glow);
+}
+
+/* ---- AI 接管的覆盖层 ---- */
+.tk-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 6;
+  pointer-events: none; /* 默认穿透：终端照常可用（暂停时键盘是放行的） */
+}
+.tk-svg {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  display: block;
+}
+.tk-svg rect {
+  fill: none;
+  stroke-width: 2;
+  rx: 10px;
+  x: 1px;
+  y: 1px;
+  width: calc(100% - 2px);
+  height: calc(100% - 2px);
+  /* 亮段 + 长间隔 = 周期 2140；dashoffset 正好走一个周期，循环无跳变。
+     光沿矩形路径跑（而不是旋转一层边框，那样会变成"方框在屏幕上转"）。 */
+  stroke-dasharray: 130 2010;
+  animation: tk-run 3.6s linear infinite;
+}
+.tk-l1 { stroke: var(--blue); }
+.tk-l2 { stroke: var(--pink); animation-delay: -1.8s; }
+@keyframes tk-run {
+  from { stroke-dashoffset: 2140; }
+  to { stroke-dashoffset: 0; }
+}
+
+/* 常驻徽标：右上角，尽量不挡内容 */
+.tk-badge {
+  position: absolute;
+  top: 6px;
+  right: 8px;
+  pointer-events: auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 22px;
+  padding: 0 7px;
+  border-radius: 999px;
+  background: var(--card);
+  border: 1px solid var(--red);
+  color: var(--ink);
+  font-size: 11px;
+  box-shadow: var(--card-shadow);
+  opacity: .94;
+}
+.tk-pulse {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--red);
+  animation: breathe 1.6s ease-in-out infinite;
+}
+.tk-round {
+  color: var(--ink-3);
+}
+.tk-stop {
+  border: none;
+  background: transparent;
+  color: var(--red);
+  font-family: inherit;
+  font-size: 11px;
+  cursor: pointer;
+  padding: 0 2px;
+}
+.tk-stop:hover {
+  text-decoration: underline;
+}
+
+/* 需要用户处理时的提示条（暂停）：居中在顶部，覆盖一层薄底 */
+.tk-alert {
+  position: absolute;
+  top: 6px;
+  left: 50%;
+  transform: translateX(-50%);
+  pointer-events: auto;
+  max-width: min(720px, 88%);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 10px;
+  border-radius: 10px;
+  background: var(--yellow-soft);
+  border: 1px solid var(--yellow);
+  box-shadow: var(--card-shadow);
+  flex-wrap: wrap;
+}
+.tk-alert.altscreen {
+  background: var(--blue-soft);
+  border-color: var(--blue);
+}
+.tk-alert-title {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--ink);
+  flex: 0 0 auto;
+}
+.tk-alert-msg {
+  flex: 1 1 200px;
+  min-width: 0;
+  font-size: 11.5px;
+  line-height: 1.55;
+  color: var(--ink-2);
+}
+.tk-alert-actions {
+  flex: 0 0 auto;
+  display: flex;
+  gap: 4px;
+}
+
+/* 尊重"减少动效"：关掉流动与呼吸，保留内发光与徽标提示 */
+@media (prefers-reduced-motion: reduce) {
+  .tk-svg rect { animation: none; }
+  .tk-pulse { animation: none; }
+}
+
+/* 折叠时右侧的竖排展开按钮（多个，像编译器的侧边面板） */
+.sidebar-rail {
+  flex: 0 0 auto;
+  width: 28px;
+  display: flex;
+  flex-direction: column;
+  border-left: 1px solid var(--line);
+  background: var(--panel-2);
+}
+.rail-btn {
+  position: relative;
+  flex: 1 1 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  border: none;
+  border-bottom: 1px solid var(--line);
+  background: transparent;
+  color: var(--ink-3);
+  font-family: inherit;
+  font-size: 11px;
+  cursor: pointer;
+  transition: background-color .2s ease, color .2s ease;
+}
+.rail-btn:last-child {
+  border-bottom: none;
+}
+.rail-btn:hover {
+  background: var(--hover-bg);
+  color: var(--blue-deep);
+}
+.rail-btn.danger {
+  color: var(--red);
+}
+.rail-text {
+  writing-mode: vertical-rl;
+  letter-spacing: 2px;
+  user-select: none;
+}
+.rail-dot {
+  position: absolute;
+  top: 8px;
+  right: 6px;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--red);
+  animation: breathe 1.6s ease-in-out infinite;
+}
+.rail-dot.paused {
+  background: var(--yellow);
+}
+
+/* ---- AI 接管时的旧横幅样式已由 .tk-* 覆盖层取代 ---- */
 /* 单窗口模式：叠层，只显示激活的那个。
    用 opacity + pointer-events 而不是 display:none / visibility:hidden ——
    后两者会让「未激活」终端的 textarea 无法获得焦点（浏览器不允许聚焦不可见元素），
@@ -1019,37 +1387,13 @@ function onGlobalKeydown(ev) {
   justify-content: center;
 }
 
-/* 侧栏收起时的展开条：贴在终端区右边缘 */
-.sidebar-handle {
-  flex: 0 0 auto;
-  width: 22px;
-  border: none;
-  border-left: 1px solid var(--line);
-  background: var(--panel-2);
-  color: var(--ink-3);
-  cursor: pointer;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: 8px;
-  transition: background-color .2s ease, color .2s ease;
-}
-.sidebar-handle:hover {
-  background: var(--hover-bg);
-  color: var(--blue);
-}
-.handle-text {
-  writing-mode: vertical-rl;
-  font-size: 11px;
-  letter-spacing: 2px;
-}
+/* 侧栏展开后的宽度（收起时显示的是 .sidebar-rail） */
 .sidebar {
   flex: 0 0 auto;
-  width: 300px;
+  width: 320px;
 }
 @media (min-width: 1400px) {
-  .sidebar { width: 340px; }
+  .sidebar { width: 360px; }
 }
 
 /* 右键菜单 */

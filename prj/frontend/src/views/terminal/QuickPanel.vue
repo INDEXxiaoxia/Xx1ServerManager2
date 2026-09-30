@@ -4,6 +4,7 @@ import {useRouter} from 'vue-router'
 import {ElMessage, ElMessageBox} from 'element-plus'
 import {api} from '@/api'
 import PresetFormDialog from '@/components/PresetFormDialog.vue'
+import AiPanel from './AiPanel.vue'
 
 const props = defineProps({
   // 当前激活终端（{key, serverId, serverName, termId, connected}），没有则为 null
@@ -11,9 +12,11 @@ const props = defineProps({
   // 所有已打开终端
   terminals: {type: Array, default: () => []},
   // 同步操作是否开启
-  sync: {type: Boolean, default: false}
+  sync: {type: Boolean, default: false},
+  // 当前展开的页签：presets | ai
+  tab: {type: String, default: 'presets'}
 })
-const emit = defineEmits(['update:sync', 'insert', 'jump', 'close'])
+const emit = defineEmits(['update:sync', 'insert', 'jump', 'close', 'update:tab', 'update:takeover'])
 
 const router = useRouter()
 
@@ -179,109 +182,146 @@ onActivated(() => {
   bindDocListeners()
   load()
 })
+
+// ---- AI：状态转交（终端页据此锁标签 / 锁键盘 / 画流光）+ 接管中自动切到 AI 页签
+const aiTakeover = ref(null)
+function onTakeoverUpdate(st) {
+  aiTakeover.value = st
+  if (st && st.full) emit('update:tab', 'ai')
+  emit('update:takeover', st)
+}
 </script>
 
 <template>
   <aside class="quick-panel" v-loading="loading">
-    <!-- 顶部：同步操作 -->
-    <div class="qp-head">
+    <!-- 页签头：像编译器的侧边面板一样，两块内容各占一个页签 -->
+    <div class="qp-tabs">
       <button
-        type="button"
-        class="sync-btn"
-        :class="{active: sync}"
-        :title="sync ? '关闭同步操作' : '开启同步操作：所有已打开终端排成 2×2 并同步输入'"
-        @click="emit('update:sync', !sync)"
+        class="qp-tab"
+        :class="{active: tab === 'presets'}"
+        title="预设命令与预设路径"
+        @click="emit('update:tab', 'presets')"
       >
-        <el-icon><Connection /></el-icon>
-        <span>同步操作</span>
-        <el-tag v-if="sync" size="small" type="warning" effect="plain">{{ terminals.length }}</el-tag>
+        <el-icon><Collection /></el-icon>
+        <span>预设操作</span>
       </button>
-      <el-button text size="small" title="收起侧栏" @click="emit('close')">
+      <button
+        class="qp-tab"
+        :class="{active: tab === 'ai', danger: aiTakeover && aiTakeover.full}"
+        title="AI 助手（建议 / 直接执行 / 完全接管）"
+        @click="emit('update:tab', 'ai')"
+      >
+        <el-icon><MagicStick /></el-icon>
+        <span>AI 辅助</span>
+        <i v-if="aiTakeover && aiTakeover.full" class="qp-dot" :class="{paused: aiTakeover.paused}" />
+      </button>
+      <el-button text size="small" title="收起面板" class="qp-collapse" @click="emit('close')">
         <el-icon><DArrowRight /></el-icon>
       </el-button>
     </div>
-    <div class="qp-tip" :class="{warn: !targetCount}">
-      {{ targetCount ? `快捷操作目标：${targetLabel}` : '未打开终端，快捷操作不可用' }}
+
+    <!-- ① 预设操作：同步开关 + 预设命令 + 预设路径（保持原来的双栏布局） -->
+    <div v-show="tab === 'presets'" class="qp-body">
+      <div class="qp-head">
+        <button
+          type="button"
+          class="sync-btn"
+          :class="{active: sync}"
+          :title="sync ? '关闭同步操作' : '开启同步操作：所有已打开终端排成 2×2 并同步输入'"
+          @click="emit('update:sync', !sync)"
+        >
+          <el-icon><Connection /></el-icon>
+          <span>同步操作</span>
+          <el-tag v-if="sync" size="small" type="warning" effect="plain">{{ terminals.length }}</el-tag>
+        </button>
+      </div>
+      <div class="qp-tip" :class="{warn: !targetCount}">
+        {{ targetCount ? `快捷操作目标：${targetLabel}` : '未打开终端，快捷操作不可用' }}
+      </div>
+
+      <section class="qp-section">
+        <div class="qp-title">
+          <span>预设命令</span>
+          <span class="qp-count">{{ filteredCommands.length }}</span>
+          <el-select v-model="category" size="small" class="qp-filter" placeholder="全部分类">
+            <el-option label="全部分类" value="" />
+            <el-option v-for="c in CATEGORIES" :key="c" :label="c" :value="c" />
+          </el-select>
+          <el-button text size="small" title="新增命令" @click="openAdd('command')">
+            <el-icon><Plus /></el-icon>
+          </el-button>
+        </div>
+        <div class="qp-list">
+          <div v-if="!filteredCommands.length" class="qp-empty">
+            暂无命令，点上方 <el-icon><Plus /></el-icon> 添加
+          </div>
+          <div
+            v-for="c in filteredCommands"
+            :key="c.id"
+            class="qp-item"
+            :title="c.command"
+            @click="insertCommand(c)"
+            @contextmenu.prevent="openMenu($event, 'command', c)"
+          >
+            <div class="qp-item-main">
+              <div class="qp-item-name">{{ c.name }}</div>
+              <div class="qp-item-sub mono">{{ c.command }}</div>
+            </div>
+            <el-icon class="qp-item-act" title="键入到终端"><Right /></el-icon>
+          </div>
+        </div>
+      </section>
+
+      <section class="qp-section">
+        <div class="qp-title">
+          <span>预设路径</span>
+          <span class="qp-count">{{ paths.length }}</span>
+          <el-tooltip content="以当前终端所在目录新建路径" placement="top">
+            <el-button text size="small" :loading="fetchingPwd" @click="addPathFromCurrentDir">
+              <el-icon><Aim /></el-icon>
+            </el-button>
+          </el-tooltip>
+          <el-button text size="small" title="新增路径" @click="openAdd('path')">
+            <el-icon><Plus /></el-icon>
+          </el-button>
+        </div>
+        <div class="qp-list">
+          <div v-if="!paths.length" class="qp-empty">
+            暂无路径，点上方 <el-icon><Plus /></el-icon> 添加
+          </div>
+          <div
+            v-for="p in paths"
+            :key="p.id"
+            class="qp-item"
+            :title="p.path"
+            @contextmenu.prevent="openMenu($event, 'path', p)"
+          >
+            <div class="qp-item-main">
+              <div class="qp-item-name">{{ p.name }}</div>
+              <div class="qp-item-sub mono">{{ p.path }}</div>
+            </div>
+            <el-button class="qp-jump" size="small" text type="primary" @click.stop="jumpPath(p)">跳转</el-button>
+          </div>
+        </div>
+      </section>
+
+      <div class="qp-foot">
+        <el-button text size="small" @click="goPresets">管理预设 →</el-button>
+        <el-button text size="small" @click="load">
+          <el-icon><Refresh /></el-icon>&nbsp;刷新
+        </el-button>
+      </div>
     </div>
 
-    <!-- 预设命令 -->
-    <section class="qp-section">
-      <div class="qp-title">
-        <span>预设命令</span>
-        <span class="qp-count">{{ filteredCommands.length }}</span>
-        <el-select v-model="category" size="small" class="qp-filter" placeholder="全部分类">
-          <el-option label="全部分类" value="" />
-          <el-option v-for="c in CATEGORIES" :key="c" :label="c" :value="c" />
-        </el-select>
-        <el-button text size="small" title="新增命令" @click="openAdd('command')">
-          <el-icon><Plus /></el-icon>
-        </el-button>
-      </div>
-      <div class="qp-list">
-        <div v-if="!filteredCommands.length" class="qp-empty">
-          暂无命令，点上方 <el-icon><Plus /></el-icon> 添加
-        </div>
-        <div
-          v-for="c in filteredCommands"
-          :key="c.id"
-          class="qp-item"
-          :title="c.command"
-          @click="insertCommand(c)"
-          @contextmenu.prevent="openMenu($event, 'command', c)"
-        >
-          <div class="qp-item-main">
-            <div class="qp-item-name">{{ c.name }}</div>
-            <div class="qp-item-sub mono">{{ c.command }}</div>
-          </div>
-          <el-icon class="qp-item-act" title="键入到终端"><Right /></el-icon>
-        </div>
-      </div>
-    </section>
-
-    <!-- 预设路径 -->
-    <section class="qp-section">
-      <div class="qp-title">
-        <span>预设路径</span>
-        <span class="qp-count">{{ paths.length }}</span>
-        <el-tooltip content="以当前终端所在目录新建路径" placement="top">
-          <el-button
-            text
-            size="small"
-            :loading="fetchingPwd"
-            @click="addPathFromCurrentDir"
-          >
-            <el-icon><Aim /></el-icon>
-          </el-button>
-        </el-tooltip>
-        <el-button text size="small" title="新增路径" @click="openAdd('path')">
-          <el-icon><Plus /></el-icon>
-        </el-button>
-      </div>
-      <div class="qp-list">
-        <div v-if="!paths.length" class="qp-empty">
-          暂无路径，点上方 <el-icon><Plus /></el-icon> 添加
-        </div>
-        <div
-          v-for="p in paths"
-          :key="p.id"
-          class="qp-item"
-          :title="p.path"
-          @contextmenu.prevent="openMenu($event, 'path', p)"
-        >
-          <div class="qp-item-main">
-            <div class="qp-item-name">{{ p.name }}</div>
-            <div class="qp-item-sub mono">{{ p.path }}</div>
-          </div>
-          <el-button class="qp-jump" size="small" text type="primary" @click.stop="jumpPath(p)">跳转</el-button>
-        </div>
-      </div>
-    </section>
-
-    <div class="qp-foot">
-      <el-button text size="small" @click="goPresets">管理预设 →</el-button>
-      <el-button text size="small" @click="load">
-        <el-icon><Refresh /></el-icon>&nbsp;刷新
-      </el-button>
+    <!-- ② AI 辅助：v-show 保证折叠/切页签都不销毁对话与接管订阅 -->
+    <div v-show="tab === 'ai'" class="qp-body">
+      <AiPanel
+        :active-terminal="activeTerminal"
+        :terminals="terminals"
+        :sync="sync"
+        @insert="v => emit('insert', v)"
+        @update:takeover="onTakeoverUpdate"
+      />
     </div>
 
     <!-- 右键菜单 -->
@@ -316,6 +356,73 @@ onActivated(() => {
   height: 100%;
   background: var(--aside-bg);
   border-left: 1px solid var(--line);
+}
+
+/* 页签头 */
+.qp-tabs {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: stretch;
+  border-bottom: 1px solid var(--line);
+  height: 30px;
+}
+.qp-tab {
+  flex: 1;
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  border: none;
+  background: transparent;
+  color: var(--ink-3);
+  font-family: inherit;
+  font-size: 12px;
+  cursor: pointer;
+  transition: color .18s ease, background-color .18s ease;
+}
+.qp-tab:hover {
+  color: var(--ink);
+  background: var(--hover-bg);
+}
+.qp-tab.active {
+  color: var(--blue-deep);
+  font-weight: 600;
+}
+.qp-tab.active::after {
+  content: '';
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: -1px;
+  height: 2px;
+  background: var(--blue);
+}
+.qp-tab.danger {
+  color: var(--red);
+}
+/* 接管中的红点（暂停时是黄点） */
+.qp-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--red);
+  animation: breathe 1.6s ease-in-out infinite;
+}
+.qp-dot.paused {
+  background: var(--yellow);
+}
+.qp-collapse {
+  flex: 0 0 auto;
+  padding: 0 6px;
+}
+
+/* 页签内容 */
+.qp-body {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
 }
 
 /* 顶部同步操作 */
@@ -359,7 +466,7 @@ onActivated(() => {
 }
 .qp-tip.warn { color: var(--yellow); }
 
-/* 分区 */
+/* 分区：预设命令 / 预设路径 各占一半，各自滚动 */
 .qp-section {
   display: flex;
   flex-direction: column;

@@ -1,5 +1,195 @@
 export namespace models {
 	
+	export class AICommand {
+	    command: string;
+	    risk: string;
+	    reason: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new AICommand(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.command = source["command"];
+	        this.risk = source["risk"];
+	        this.reason = source["reason"];
+	    }
+	}
+	export class AIContext {
+	    termId: string;
+	    mode: string;
+	    text: string;
+	    lines: number;
+	    bytes: number;
+	    truncated: boolean;
+	    dropped: boolean;
+	    elided: boolean;
+	    seqFrom: number;
+	    seqTo: number;
+	    empty: boolean;
+	
+	    static createFrom(source: any = {}) {
+	        return new AIContext(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.termId = source["termId"];
+	        this.mode = source["mode"];
+	        this.text = source["text"];
+	        this.lines = source["lines"];
+	        this.bytes = source["bytes"];
+	        this.truncated = source["truncated"];
+	        this.dropped = source["dropped"];
+	        this.elided = source["elided"];
+	        this.seqFrom = source["seqFrom"];
+	        this.seqTo = source["seqTo"];
+	        this.empty = source["empty"];
+	    }
+	}
+	export class AIExecResult {
+	    command: string;
+	    exitCode: number;
+	    output: string;
+	    truncated: boolean;
+	    status: string;
+	    message: string;
+	    elapsedMs: number;
+	    risk: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new AIExecResult(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.command = source["command"];
+	        this.exitCode = source["exitCode"];
+	        this.output = source["output"];
+	        this.truncated = source["truncated"];
+	        this.status = source["status"];
+	        this.message = source["message"];
+	        this.elapsedMs = source["elapsedMs"];
+	        this.risk = source["risk"];
+	    }
+	}
+	export class AIRequest {
+	    sessionId: string;
+	    termId: string;
+	    serverId: string;
+	    text: string;
+	    mode: string;
+	    context: string;
+	    lines: number;
+	    selection: string;
+	    maxRounds: number;
+	    continueSession: boolean;
+	
+	    static createFrom(source: any = {}) {
+	        return new AIRequest(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.sessionId = source["sessionId"];
+	        this.termId = source["termId"];
+	        this.serverId = source["serverId"];
+	        this.text = source["text"];
+	        this.mode = source["mode"];
+	        this.context = source["context"];
+	        this.lines = source["lines"];
+	        this.selection = source["selection"];
+	        this.maxRounds = source["maxRounds"];
+	        this.continueSession = source["continueSession"];
+	    }
+	}
+	export class AIResponse {
+	    sessionId: string;
+	    text: string;
+	    commands: AICommand[];
+	    context: AIContext;
+	    model: string;
+	    elapsedMs: number;
+	    truncated: boolean;
+	
+	    static createFrom(source: any = {}) {
+	        return new AIResponse(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.sessionId = source["sessionId"];
+	        this.text = source["text"];
+	        this.commands = this.convertValues(source["commands"], AICommand);
+	        this.context = this.convertValues(source["context"], AIContext);
+	        this.model = source["model"];
+	        this.elapsedMs = source["elapsedMs"];
+	        this.truncated = source["truncated"];
+	    }
+	
+		convertValues(a: any, classs: any, asMap: boolean = false): any {
+		    if (!a) {
+		        return a;
+		    }
+		    if (a.slice && a.map) {
+		        return (a as any[]).map(elem => this.convertValues(elem, classs));
+		    } else if ("object" === typeof a) {
+		        if (asMap) {
+		            for (const key of Object.keys(a)) {
+		                a[key] = new classs(a[key]);
+		            }
+		            return a;
+		        }
+		        return new classs(a);
+		    }
+		    return a;
+		}
+	}
+	export class AISettings {
+	    baseURL: string;
+	    apiKey: string;
+	    apiKeySet: boolean;
+	    model: string;
+	    maxRounds: number;
+	    timeout: number;
+	    contextLines: number;
+	
+	    static createFrom(source: any = {}) {
+	        return new AISettings(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.baseURL = source["baseURL"];
+	        this.apiKey = source["apiKey"];
+	        this.apiKeySet = source["apiKeySet"];
+	        this.model = source["model"];
+	        this.maxRounds = source["maxRounds"];
+	        this.timeout = source["timeout"];
+	        this.contextLines = source["contextLines"];
+	    }
+	}
+	export class AITestResult {
+	    ok: boolean;
+	    message: string;
+	    latencyMs: number;
+	    model: string;
+	    endpoint: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new AITestResult(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.ok = source["ok"];
+	        this.message = source["message"];
+	        this.latencyMs = source["latencyMs"];
+	        this.model = source["model"];
+	        this.endpoint = source["endpoint"];
+	    }
+	}
 	export class CommandHistory {
 	    id: number;
 	    serverId: string;
@@ -12,6 +202,8 @@ export namespace models {
 	    duration: number;
 	    // Go type: time
 	    createdAt: any;
+	    source: string;
+	    aiSessionId: string;
 	
 	    static createFrom(source: any = {}) {
 	        return new CommandHistory(source);
@@ -29,6 +221,8 @@ export namespace models {
 	        this.stderr = source["stderr"];
 	        this.duration = source["duration"];
 	        this.createdAt = this.convertValues(source["createdAt"], null);
+	        this.source = source["source"];
+	        this.aiSessionId = source["aiSessionId"];
 	    }
 	
 		convertValues(a: any, classs: any, asMap: boolean = false): any {

@@ -33,15 +33,20 @@ type App struct {
 	// 运维工具的磁盘检测任务：一次检测一条记录，取消时靠它掐断正在跑的 du
 	opsMu     sync.Mutex
 	diskTasks map[string]*diskTask
+
+	// 终端 AI 会话：对话上下文只活在内存里（按需求不落库），重启即消失
+	aiMu       sync.Mutex
+	aiSessions map[string]*aiSession
 }
 
 // NewApp 创建应用实例
 func NewApp() *App {
 	return &App{
-		terminals: make(map[string]*TerminalSession),
-		monitors:  make(map[string]context.CancelFunc),
-		fileConns: make(map[string]*fileSession),
-		diskTasks: make(map[string]*diskTask),
+		terminals:  make(map[string]*TerminalSession),
+		monitors:   make(map[string]context.CancelFunc),
+		fileConns:  make(map[string]*fileSession),
+		diskTasks:  make(map[string]*diskTask),
+		aiSessions: make(map[string]*aiSession),
 	}
 }
 
