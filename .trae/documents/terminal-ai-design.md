@@ -185,10 +185,13 @@ func (a *App) TestAIConnection() (AITestResult, error)
 - 结构：`.term-body` 内一个 `position: absolute; inset: 0; pointer-events: none` 的覆盖层，内含
   ① `.tk-glow` 内发光层、② `<svg>` 沿边框跑的光（三条 `rect`：晕 + 主题蓝 + 主题粉）、
   ③ 右上角小徽标、④（暂停时的）居中提示条
-- **内发光**：`.tk-glow` 用多层 `inset box-shadow` 贴边发光、**呼吸**用 `opacity` 动画
-  （0.5 ⇄ 1，2.8s ease-in-out）。放在独立覆盖层而不是直接改 `.term-body` 的 box-shadow：
-  动画只跑 opacity（合成层属性），也不碰布局。中间区域不受影响，终端文字照常清晰
-- 边框光是三条 `rect` 叠加：一条 7px 宽的淡晕（让光"有发光感"）+ 蓝/粉两条 2px 亮段（相位差半个周期）
+- **内发光**：`.tk-glow` 用**四条线性渐变**拼出"周围一圈"（每边一条，宽度可控、转角自然）：
+  贴边 12px 是**不透明的主色深色**（`--blue-deep`）渐隐，再往外扩散到 26px 是半透明余晖
+  （`--blue-glow-strong`）——所以颜色够深、够明显，压住一点终端文字也没关系（这一圈本身就是信号）
+- **呼吸**：整层用 `opacity` 动画（**0.28 ⇄ 1**，2.2s ease-in-out），幅度拉得很大，一眼就能看出被接管；
+  动画只跑 opacity（合成层属性），也不碰布局。中间区域不受影响，终端文字主体照常清晰
+- 边框光是三条 `rect` 叠加：一条 8px 宽的淡晕（让光"有发光感"）+ 蓝/粉两条 2px 亮段（相位差半个周期），
+  三者都参与呼吸
 - `stroke-dasharray: 130 2010`，`stroke-dashoffset` 在一个周期（2140）内循环 → 无缝、不跳变
 - 另有一圈 1px 的实色内边（`inset 0 0 0 1px var(--blue)`）作为基准线：
   即使系统开了"减少动效"、动画被关掉，也能一眼看出终端被接管

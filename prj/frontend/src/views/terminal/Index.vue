@@ -1092,20 +1092,31 @@ function onGlobalKeydown(ev) {
   z-index: 6;
   pointer-events: none; /* 默认穿透：终端照常可用（暂停时键盘是放行的） */
 }
-/* 内发光 + 呼吸：颜色全部走主题令牌，三套主题各自成立 */
+/* 内发光 + 呼吸：只做"周围一圈"，范围精确控制在 12~26px。
+   用四条线性渐变拼出来（每边一条），所以宽度可控、转角自然；
+   贴近边缘的一档直接用**不透明的主色深色**（--blue-deep）渐隐，
+   所以颜色够深、够明显，压在文字上也没关系（这一圈本来就是"被接管"的信号）。
+   颜色全部走主题令牌，浅色 / 深色 / 赛博三套各自成立。 */
 .tk-glow {
   position: absolute;
   inset: 0;
   pointer-events: none;
-  box-shadow:
-    inset 0 0 0 2px var(--blue-soft-glow),
-    inset 0 0 26px 2px var(--blue-glow-strong),
-    inset 0 0 80px 14px var(--blue-soft-glow),
-    inset 0 0 150px 34px var(--halo-2);
-  animation: tk-breathe 2.8s ease-in-out infinite;
+  background:
+    /* 贴边 12px：不透明的深色主色，渐隐 */
+    linear-gradient(to bottom, var(--blue-deep), transparent 12px) top left / 100% 12px no-repeat,
+    linear-gradient(to top, var(--blue-deep), transparent 12px) bottom left / 100% 12px no-repeat,
+    linear-gradient(to right, var(--blue-deep), transparent 12px) top left / 12px 100% no-repeat,
+    linear-gradient(to left, var(--blue-deep), transparent 12px) top right / 12px 100% no-repeat,
+    /* 再往外扩散到 26px：半透明主色余晖 */
+    linear-gradient(to bottom, var(--blue-glow-strong), transparent 26px) top left / 100% 26px no-repeat,
+    linear-gradient(to top, var(--blue-glow-strong), transparent 26px) bottom left / 100% 26px no-repeat,
+    linear-gradient(to right, var(--blue-glow-strong), transparent 26px) top left / 26px 100% no-repeat,
+    linear-gradient(to left, var(--blue-glow-strong), transparent 26px) top right / 26px 100% no-repeat;
+  animation: tk-breathe 2.2s ease-in-out infinite;
 }
+/* 呼吸幅度拉大（0.28 ⇄ 1），让人一眼看出"这台终端正在被 AI 控制" */
 @keyframes tk-breathe {
-  0%, 100% { opacity: .5; }
+  0%, 100% { opacity: .28; }
   50% { opacity: 1; }
 }
 .tk-svg {
@@ -1131,9 +1142,9 @@ function onGlobalKeydown(ev) {
 .tk-l0 {
   /* 边框晕：比亮段更宽更淡，让"跑动的光"有发光感 */
   stroke: var(--blue);
-  stroke-width: 7;
-  opacity: .16;
-  animation: tk-run 3.6s linear infinite, tk-breathe 2.8s ease-in-out infinite;
+  stroke-width: 8;
+  opacity: .22;
+  animation: tk-run 3.6s linear infinite, tk-breathe 2.2s ease-in-out infinite;
 }
 .tk-l1 { stroke: var(--blue); }
 .tk-l2 { stroke: var(--pink); animation-delay: -1.8s; }
