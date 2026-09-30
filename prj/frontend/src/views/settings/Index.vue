@@ -16,21 +16,13 @@ const configDirExists = ref(false)
 const openingDir = ref(false)
 
 // ---- AI 设置 ----
-// 常见服务商的 OpenAI 兼容地址（实现时按各家官方文档核对过）。
-// 填到 /v1 为止即可，程序会自己拼 /chat/completions。
-const AI_PRESETS = [
-  {name: 'DeepSeek', baseURL: 'https://api.deepseek.com/v1', model: 'deepseek-chat'},
-  {name: '通义千问（兼容模式）', baseURL: 'https://dashscope.aliyuncs.com/compatible-mode/v1', model: 'qwen-plus'},
-  {name: 'OpenAI', baseURL: 'https://api.openai.com/v1', model: 'gpt-4o-mini'},
-  {name: '硅基流动', baseURL: 'https://api.siliconflow.cn/v1', model: 'deepseek-ai/DeepSeek-V3'},
-  {name: '本地 Ollama', baseURL: 'http://localhost:11434/v1', model: 'qwen2.5:14b'},
-  {name: '自定义', baseURL: '', model: ''}
-]
+// 只支持 OpenAI 兼容接口：不做服务商预设，填 Key + 模型就能用；
+// 接口地址留空时后端会自动用官方地址（这里只是把默认值展示出来）。
+const AI_DEFAULT_BASE = 'https://api.openai.com/v1'
 const ai = reactive({
   baseURL: '', apiKey: '', apiKeySet: false, model: '',
   maxRounds: 20, timeout: 60, contextLines: 200
 })
-const aiPreset = ref('')
 const aiSaving = ref(false)
 const aiTesting = ref(false)
 const aiTestMsg = ref('')
@@ -40,18 +32,9 @@ async function loadAI() {
   try {
     const s = await api.getAISettings()
     Object.assign(ai, s, {apiKey: ''}) // Key 不回传明文，输入框留空表示"不修改"
-    const hit = AI_PRESETS.find(p => p.baseURL && p.baseURL === s.baseURL)
-    aiPreset.value = hit ? hit.name : (s.baseURL ? '自定义' : '')
   } catch (e) {
     /* 未配置时忽略 */
   }
-}
-
-function applyPreset(name) {
-  const p = AI_PRESETS.find(x => x.name === name)
-  if (!p) return
-  if (p.baseURL) ai.baseURL = p.baseURL
-  if (p.model) ai.model = p.model
 }
 
 async function saveAI() {
@@ -211,23 +194,11 @@ async function setPassword() {
 
     <div class="card mb-12">
       <h3 class="card-title">AI 设置（SSH 终端的 AI 助手）</h3>
+      <p class="ai-intro text-muted">
+        只支持 <b>OpenAI 兼容接口</b>（<span class="mono">POST /chat/completions</span>）。
+        填好 API Key 与模型名即可；接口地址留空就用 OpenAI 官方地址，换成其它兼容服务时再改。
+      </p>
       <el-form label-width="120px" class="mt-12">
-        <el-form-item label="常用预设">
-          <el-select v-model="aiPreset" style="width: 260px" placeholder="选一个常见服务商自动填地址" @change="applyPreset">
-            <el-option v-for="p in AI_PRESETS" :key="p.name" :label="p.name" :value="p.name" />
-            <el-option label="自定义" value="自定义" />
-          </el-select>
-          <span class="text-muted field-hint">选完仍可手动改下面的地址</span>
-        </el-form-item>
-
-        <el-form-item label="接口地址">
-          <el-input v-model="ai.baseURL" placeholder="https://api.deepseek.com/v1" style="width: 420px" />
-          <div class="field-hint text-muted">
-            填到 <b>/v1</b> 结尾即可，程序会自动拼接 <span class="mono">/chat/completions</span>；
-            不要填完整的接口路径。
-          </div>
-        </el-form-item>
-
         <el-form-item label="API Key">
           <el-input
             v-model="ai.apiKey"
@@ -242,12 +213,20 @@ async function setPassword() {
         </el-form-item>
 
         <el-form-item label="模型">
-          <el-input v-model="ai.model" placeholder="deepseek-chat" style="width: 260px" />
+          <el-input v-model="ai.model" placeholder="gpt-4o-mini" style="width: 260px" />
+        </el-form-item>
+
+        <el-form-item label="接口地址">
+          <el-input v-model="ai.baseURL" :placeholder="AI_DEFAULT_BASE" style="width: 420px" />
+          <div class="field-hint text-muted">
+            留空即用 <span class="mono">{{ AI_DEFAULT_BASE }}</span>；
+            填到 <b>/v1</b> 结尾即可，程序自动拼接 <span class="mono">/chat/completions</span>。
+          </div>
         </el-form-item>
 
         <el-form-item label="接管最大轮数">
           <el-input-number v-model="ai.maxRounds" :min="1" :max="100" />
-          <span class="text-muted field-hint">完全接管模式下最多自动执行多少轮，达到上限会暂停并等你追加要求</span>
+          <span class="text-muted field-hint-inline">完全接管模式下最多自动执行多少轮，达到上限会暂停并等你继续</span>
         </el-form-item>
 
         <el-form-item label="请求超时(秒)">
@@ -256,7 +235,7 @@ async function setPassword() {
 
         <el-form-item label="终端上下文行数">
           <el-input-number v-model="ai.contextLines" :min="20" :max="2000" :step="50" />
-          <span class="text-muted field-hint">每次问 AI 时附带终端最近多少行，行数越多越费 token</span>
+          <span class="text-muted field-hint-inline">每次问 AI 时附带终端最近多少行，行数越多越费 token</span>
         </el-form-item>
 
         <el-form-item>
@@ -306,7 +285,17 @@ async function setPassword() {
 </template>
 
 <style scoped>
-/* AI 设置里的说明小字：单独占一行，不与输入框挤在一排 */
+/* AI 设置顶部说明 */
+.ai-intro {
+  margin: 8px 0 0;
+  font-size: 12.5px;
+  line-height: 1.7;
+  max-width: 720px;
+}
+.ai-intro b {
+  color: var(--blue-deep);
+}
+/* 说明小字：单独占一行，不与输入框挤在一排 */
 .field-hint {
   font-size: 12px;
   line-height: 1.7;
@@ -318,8 +307,9 @@ async function setPassword() {
   margin-left: 0;
   margin-top: 4px;
 }
-.el-form-item .field-hint.ml-inline {
-  display: inline;
+.field-hint-inline {
+  font-size: 12px;
+  line-height: 1.7;
   margin-left: 10px;
 }
 .test-msg {

@@ -40,13 +40,19 @@
 
 | 字段 | 默认 | UI 要求 |
 |---|---|---|
-| 接口地址 | 空 | 占位符 `https://api.deepseek.com/v1`；帮助文字："填到 `/v1` 结尾即可，程序自动拼接 `/chat/completions`，不要填完整接口路径"；上方「常用预设」下拉：DeepSeek / 通义千问（兼容模式）/ OpenAI / 硅基流动 / 本地 Ollama / 自定义（厂商 URL 实现时按官方文档核对后写死） |
 | API Key | 空 | 密码框 + 显示/隐藏；**用主密码派生密钥加密后存 `app_settings`**（复用 `internal/crypto`，与服务器密码同策略）；**保存时若输入框为空则不覆盖已存值** |
-| 模型 | 空 | 占位符 `deepseek-chat` |
+| 模型 | 空 | 占位符 `gpt-4o-mini` |
+| 接口地址 | 空 | 占位符即默认值 `https://api.openai.com/v1`；**留空时后端自动用官方地址**（所以只填 Key 与模型就能跑）；填到 `/v1` 结尾即可，程序自动拼 `/chat/completions` |
 | 全权模式最大轮数 | 20 | 数字 1–100；旁注"达到上限会自动暂停，继续发送消息就接着往下跑" |
 | 请求超时(秒) | 60 | |
 | 终端上下文行数 | 200 | 旁注"发送给 AI 的终端尾行数，越长越费 token" |
-| 「测试连通」按钮 | — | `TestAIConnection()`：POST `/chat/completions`，`max_tokens=1`；成功 `✅ 连通 · 模型 deepseek-chat · 812ms`；失败显示 **HTTP 状态码 + 响应体前 500 字**（否则用户分不清 Key 错 / URL 错 / 模型名错） |
+| 「测试连通」按钮 | — | `TestAIConnection()`：POST `/chat/completions`，`max_tokens=1`；成功 `✅ 连通 · 模型 … · 812ms`；失败显示 **HTTP 状态码 + 响应体前 500 字**（否则用户分不清 Key 错 / URL 错 / 模型名错） |
+
+> **只支持 OpenAI 兼容协议，不做服务商预设。**
+> 早期版本在表单顶部放了 6 个厂商预设（DeepSeek / 通义兼容模式 / OpenAI / 硅基流动 / 本地 Ollama / 自定义），
+> 实际用起来是负担：协议本来就是同一套，用户只需要填 Key 和模型名。
+> 现在卡片顶部一句话说明协议，表单只留「API Key / 模型 / 接口地址（可留空）」+ 三个可选参数，
+> 后端在地址为空时兜底到 `https://api.openai.com/v1`。
 
 存储键：`ai.baseURL` / `ai.apiKey` / `ai.model` / `ai.maxRounds` / `ai.timeout` / `ai.contextLines`，对应扩展 `models.Settings` 与 `store.GetSettings/SaveSettings`。
 

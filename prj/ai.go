@@ -40,6 +40,8 @@ const (
 	aiDefaultMaxRounds    = 20
 	aiDefaultTimeout      = 60
 	aiDefaultContextLines = 200
+	// aiDefaultBaseURL 接口地址留空时用的默认值（OpenAI 兼容协议，只填 Key 与模型也能直接跑）
+	aiDefaultBaseURL = "https://api.openai.com/v1"
 
 	// 单步硬超时：到点发 Ctrl+C 收尾，避免终端被一个跑飞的命令长期占住
 	aiStepHardTimeout = 5 * time.Minute
@@ -140,14 +142,15 @@ func clampInt(v, min, max, def int) int {
 	return v
 }
 
-// aiClient 组装 AI 客户端（解密 API Key）
+// aiClient 组装 AI 客户端（解密 API Key）。
+// 接口地址留空时用 OpenAI 官方地址——这样"只填 Key 和模型"就能直接用。
 func (a *App) aiClient() (*aiclient.Client, models.AISettings, error) {
 	s, err := a.GetAISettings()
 	if err != nil {
 		return nil, s, err
 	}
 	if strings.TrimSpace(s.BaseURL) == "" {
-		return nil, s, errors.New("尚未配置 AI 接口地址：设置 → AI 设置")
+		s.BaseURL = aiDefaultBaseURL
 	}
 	if strings.TrimSpace(s.Model) == "" {
 		return nil, s, errors.New("尚未配置模型名：设置 → AI 设置")
@@ -174,7 +177,12 @@ func (a *App) aiClient() (*aiclient.Client, models.AISettings, error) {
 // TestAIConnection 测试连通：验证地址 / Key / 模型名三件事
 func (a *App) TestAIConnection() (models.AITestResult, error) {
 	c, s, err := a.aiClient()
-	res := models.AITestResult{Endpoint: aiclient.Endpoint(s.BaseURL), Model: s.Model}
+	res := models.AITestResult{Model: s.Model}
+	base := s.BaseURL
+	if strings.TrimSpace(base) == "" {
+		base = aiDefaultBaseURL
+	}
+	res.Endpoint = aiclient.Endpoint(base)
 	if err != nil {
 		res.Message = err.Error()
 		return res, nil
