@@ -182,15 +182,22 @@ func (a *App) TestAIConnection() (AITestResult, error)
 用 SVG `<rect>` 的 `stroke-dasharray` + `stroke-dashoffset` 动画（一条亮段绕矩形周长行进），
 不旋转任何元素，转角与圆角都自然。
 
-- 结构：`.term-body` 内一个 `position: absolute; inset: 0; pointer-events: none` 的覆盖层，
-  内含 `<svg>`（两条 `rect`：主题蓝 + 主题粉，相位差半个周期）+ 右上角小徽标 +（暂停时的）提示条
+- 结构：`.term-body` 内一个 `position: absolute; inset: 0; pointer-events: none` 的覆盖层，内含
+  ① `.tk-glow` 内发光层、② `<svg>` 沿边框跑的光（三条 `rect`：晕 + 主题蓝 + 主题粉）、
+  ③ 右上角小徽标、④（暂停时的）居中提示条
+- **内发光**：`.tk-glow` 用多层 `inset box-shadow` 贴边发光、**呼吸**用 `opacity` 动画
+  （0.5 ⇄ 1，2.8s ease-in-out）。放在独立覆盖层而不是直接改 `.term-body` 的 box-shadow：
+  动画只跑 opacity（合成层属性），也不碰布局。中间区域不受影响，终端文字照常清晰
+- 边框光是三条 `rect` 叠加：一条 7px 宽的淡晕（让光"有发光感"）+ 蓝/粉两条 2px 亮段（相位差半个周期）
 - `stroke-dasharray: 130 2010`，`stroke-dashoffset` 在一个周期（2140）内循环 → 无缝、不跳变
-- 内发光用 `box-shadow: inset …` 实现，**同样不影响布局**
+- 另有一圈 1px 的实色内边（`inset 0 0 0 1px var(--blue)`）作为基准线：
+  即使系统开了"减少动效"、动画被关掉，也能一眼看出终端被接管
 - **早期版本在终端上方加了一条横幅，把终端高度往下推了 28px**——这就是"影响了页面结构"。
   现在全部改成覆盖层：终端尺寸不变、不需要重新 `fit()`、远端行列数也不变
-- 常驻元素只有一个 22px 高的右上角徽标（`AI 接管中 3/20 · 停止`，半透明、`pointer-events` 只在自己身上）；
-  需要用户处理（密码 / 确认 / 退出 vim）时才在顶部居中展开一条醒目的提示条 + 主按钮
-- `prefers-reduced-motion` 下关掉流动与呼吸动画，只保留内发光与徽标
+- 常驻元素只有一个 22px 高的右上角徽标（`AI 接管中 3/20 · 停止`；单条执行时显示"AI 正在执行"
+  且不显示轮次，半透明、`pointer-events` 只在自己身上）；需要用户处理（密码 / 确认 / 退出 vim）时
+  才在顶部居中展开一条醒目的提示条 + 主按钮
+- `prefers-reduced-motion` 下关掉流动、呼吸与脉动，内发光固定在较高不透明度
 
 ### 7.3 输入区交互（参照 ChatGPT / Gemini / DSH 这类 agent 工具）
 

@@ -837,16 +837,21 @@ function onGlobalKeydown(ev) {
         <!-- AI 接管的视觉提示：纯覆盖层（pointer-events 默认穿透），
              不占布局、不改变终端尺寸，因此不需要重新 fit。 -->
         <div v-if="takeoverFull" class="tk-overlay">
+          <!-- 内发光层：靠 inset box-shadow 贴边发光（中间不遮内容），opacity 做呼吸。
+               用独立覆盖层而不是直接改 .term-body 的 box-shadow，
+               这样动画只跑 opacity（合成层属性），也不会影响布局。 -->
+          <div class="tk-glow" />
           <svg class="tk-svg" aria-hidden="true">
+            <rect class="tk-l0" />
             <rect class="tk-l1" />
             <rect class="tk-l2" />
           </svg>
           <!-- 常驻：右上角小徽标，不挡内容 -->
           <div class="tk-badge">
             <i class="tk-pulse" />
-            <span>AI 接管中</span>
-            <span v-if="takeover.round" class="tk-round">
-              {{ takeover.round }}<template v-if="takeover.maxRounds">/{{ takeover.maxRounds }}</template>
+            <span>{{ takeover.maxRounds > 1 ? 'AI 接管中' : 'AI 正在执行' }}</span>
+            <span v-if="takeover.round && takeover.maxRounds > 1" class="tk-round">
+              {{ takeover.round }}/{{ takeover.maxRounds }}
             </span>
             <button class="tk-stop" @click="stopTakeover">停止</button>
           </div>
@@ -1074,11 +1079,10 @@ function onGlobalKeydown(ev) {
   position: relative;
   min-height: 0;
 }
-/* AI 完全接管：内发光 + 沿着边框跑的光（见 .tk-overlay），
-   全部是覆盖层，不改终端尺寸、不影响页面结构。 */
+/* AI 完全接管：贴边内发光（见 .tk-glow + .tk-svg），全部是覆盖层，
+   不改终端尺寸、不影响页面结构。这一圈细边是"基准线"：即使动画被禁用也一眼能看出。 */
 .term-body.takeover {
-  box-shadow: inset 0 0 42px -12px var(--blue-glow-strong),
-              inset 0 0 0 1px var(--blue-soft-glow);
+  box-shadow: inset 0 0 0 1px var(--blue);
 }
 
 /* ---- AI 接管的覆盖层 ---- */
@@ -1087,6 +1091,22 @@ function onGlobalKeydown(ev) {
   inset: 0;
   z-index: 6;
   pointer-events: none; /* 默认穿透：终端照常可用（暂停时键盘是放行的） */
+}
+/* 内发光 + 呼吸：颜色全部走主题令牌，三套主题各自成立 */
+.tk-glow {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  box-shadow:
+    inset 0 0 0 2px var(--blue-soft-glow),
+    inset 0 0 26px 2px var(--blue-glow-strong),
+    inset 0 0 80px 14px var(--blue-soft-glow),
+    inset 0 0 150px 34px var(--halo-2);
+  animation: tk-breathe 2.8s ease-in-out infinite;
+}
+@keyframes tk-breathe {
+  0%, 100% { opacity: .5; }
+  50% { opacity: 1; }
 }
 .tk-svg {
   position: absolute;
@@ -1107,6 +1127,13 @@ function onGlobalKeydown(ev) {
      光沿矩形路径跑（而不是旋转一层边框，那样会变成"方框在屏幕上转"）。 */
   stroke-dasharray: 130 2010;
   animation: tk-run 3.6s linear infinite;
+}
+.tk-l0 {
+  /* 边框晕：比亮段更宽更淡，让"跑动的光"有发光感 */
+  stroke: var(--blue);
+  stroke-width: 7;
+  opacity: .16;
+  animation: tk-run 3.6s linear infinite, tk-breathe 2.8s ease-in-out infinite;
 }
 .tk-l1 { stroke: var(--blue); }
 .tk-l2 { stroke: var(--pink); animation-delay: -1.8s; }
@@ -1199,9 +1226,10 @@ function onGlobalKeydown(ev) {
   gap: 4px;
 }
 
-/* 尊重"减少动效"：关掉流动与呼吸，保留内发光与徽标提示 */
+/* 尊重"减少动效"：关掉流动与呼吸，但内发光与细边仍保留（照样看得出被接管） */
 @media (prefers-reduced-motion: reduce) {
   .tk-svg rect { animation: none; }
+  .tk-glow { animation: none; opacity: .85; }
   .tk-pulse { animation: none; }
 }
 
