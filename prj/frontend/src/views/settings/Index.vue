@@ -195,6 +195,10 @@ async function setPassword() {
     <div class="card mb-12">
       <h3 class="card-title">AI 设置（SSH 终端的 AI 助手）</h3>
       <el-form label-width="120px" class="mt-12">
+        <el-form-item label="openAPI地址">
+          <el-input v-model="ai.baseURL" :placeholder="AI_DEFAULT_BASE" style="width: 420px" />
+        </el-form-item>
+
         <el-form-item label="API Key">
           <el-input
             v-model="ai.apiKey"
@@ -203,21 +207,14 @@ async function setPassword() {
             style="width: 420px"
             :placeholder="ai.apiKeySet ? '已保存（留空表示不修改）' : 'sk-xxxxxxxx'"
           />
-          <span class="text-muted field-hint-inline">本地加密保存</span>
         </el-form-item>
 
         <el-form-item label="模型">
           <el-input v-model="ai.model" placeholder="gpt-4o-mini" style="width: 260px" />
         </el-form-item>
 
-        <el-form-item label="接口地址">
-          <el-input v-model="ai.baseURL" :placeholder="AI_DEFAULT_BASE" style="width: 420px" />
-          <div class="field-hint text-muted">open 格式 api 地址或代理地址，填到 /v1 结尾即可</div>
-        </el-form-item>
-
         <el-form-item label="接管最大轮数">
           <el-input-number v-model="ai.maxRounds" :min="1" :max="100" />
-          <span class="text-muted field-hint-inline">达到上限自动暂停</span>
         </el-form-item>
 
         <el-form-item label="请求超时(秒)">
@@ -226,7 +223,6 @@ async function setPassword() {
 
         <el-form-item label="终端上下文行数">
           <el-input-number v-model="ai.contextLines" :min="20" :max="2000" :step="50" />
-          <span class="text-muted field-hint-inline">附带终端最近多少行</span>
         </el-form-item>
 
         <el-form-item>
@@ -276,19 +272,6 @@ async function setPassword() {
 </template>
 
 <style scoped>
-/* 说明小字：单独占一行，不与输入框挤在一排 */
-.field-hint {
-  font-size: 12px;
-  line-height: 1.7;
-  margin-left: 0;
-  margin-top: 4px;
-  max-width: 520px;
-}
-.field-hint-inline {
-  font-size: 12px;
-  line-height: 1.7;
-  margin-left: 10px;
-}
 .test-msg {
   margin-left: 12px;
   font-size: 12px;
