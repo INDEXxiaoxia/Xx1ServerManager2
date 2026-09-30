@@ -500,9 +500,8 @@ func (a *App) AIStopTakeover(sessionID string) error {
 
 // AITakeoverControl 接管过程中的交互控制：
 //
-//	continue  — 用户已手动处理完终端里的提示，继续等这一步
-//	ctrlc     — 给终端发 Ctrl+C 中断当前命令
-//	abort     — 中止整个任务（等价于停止）
+//	continue — 用户已手动处理完终端里的提示（输了密码、退出了 vim），继续等这一步
+//	abort    — 中止整个任务（等价于「停止」）
 func (a *App) AITakeoverControl(sessionID, action string) error {
 	s := a.existingAISession(sessionID)
 	if s == nil {
@@ -516,11 +515,6 @@ func (a *App) AITakeoverControl(sessionID, action string) error {
 		s.mu.Unlock()
 		select {
 		case s.control <- "continue":
-		default:
-		}
-	case "ctrlc":
-		select {
-		case s.control <- "ctrlc":
 		default:
 		}
 	case "abort":
@@ -890,15 +884,17 @@ func (a *App) aiExecStep(s *aiSession, command string) models.AIExecResult {
 		} else if pat, isPrompt := ansi.LooksLikePrompt(clean); isPrompt {
 			blockKind = "input"
 			if looksLikePasswordPrompt(pat) {
-				blockReason = "命令需要你输入密码（检测到提示：" + pat + "）。现在终端已解锁：请直接输入或粘贴密码，按回车提交，然后点下面的「输入完成，继续」"
+				blockReason = "命令需要你输入密码（检测到提示：" + pat + "）。终端已解锁：请直接输入或粘贴密码，" +
+					"按回车提交——提交后 AI 会自动继续；若没有继续，再点「输入完成，继续」"
 			} else {
-				blockReason = "命令在等你确认（检测到提示：" + pat + "）。现在终端已解锁：请输入 y / n 或需要的答案并回车，然后点下面的「输入完成，继续」"
+				blockReason = "命令在等你确认（检测到提示：" + pat + "）。终端已解锁：请输入 y / n 或需要的答案并回车，" +
+					"提交后 AI 会自动继续；若没有继续，再点「输入完成，继续」"
 			}
 		} else if !stallWarned && time.Since(lastChange) > aiStepStallWarn {
 			stallWarned = true
 			blockKind = "stall"
 			blockReason = fmt.Sprintf("已经 %s 没有新输出：可能仍在长时间运行，也可能卡住了。"+
-				"建议再等一会儿；确认卡死可以点「发送 Ctrl+C」中断这一步", aiStepStallWarn)
+				"可以继续等；确认卡死就点「停止」把任务停下", aiStepStallWarn)
 		}
 		if blockReason != "" {
 			s.mu.Lock()
@@ -922,17 +918,6 @@ func (a *App) aiExecStep(s *aiSession, command string) models.AIExecResult {
 				lastChange = time.Now()
 				stallWarned = false
 				a.emitAIState(s, "running", "已继续等待命令结果")
-			case "ctrlc":
-				_ = a.TerminalWrite(s.termID, "\x03")
-				// 等一小会儿让 shell 回到提示符，把已有输出收走
-				time.Sleep(800 * time.Millisecond)
-				data2, _, _, _ := ts.tail.snapshot(from)
-				out := stripEcho(ansi.Strip(string(data2)), command)
-				out, _ = ansi.Elide(out, aiStepMaxOutput)
-				res.Output = out
-				res.Status = "interrupted"
-				res.Message = "已发送 Ctrl+C，命令被中断"
-				return finishStep(a, s, ts, res, from, start)
 			case "abort":
 				_ = a.TerminalWrite(s.termID, "\x03")
 				res.Status = "cancelled"

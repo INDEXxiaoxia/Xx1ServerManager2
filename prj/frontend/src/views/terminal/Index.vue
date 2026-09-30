@@ -100,14 +100,6 @@ async function continueTakeover() {
     ElMessage.error('操作失败：' + e)
   }
 }
-async function ctrlCTakeover() {
-  if (!takeover.value.sessionId) return
-  try {
-    await api.aiTakeoverControl(takeover.value.sessionId, 'ctrlc')
-  } catch (e) {
-    ElMessage.error('操作失败：' + e)
-  }
-}
 
 function openSidebarTab(t) {
   sidebarTab.value = sidebarTab.value === t ? '' : t
@@ -863,9 +855,9 @@ function onGlobalKeydown(ev) {
             <span class="tk-alert-title">{{ takeover.kind === 'input' ? '需要你输入' : takeover.kind === 'altscreen' ? '需要你退出程序' : '可能卡住了' }}</span>
             <span class="tk-alert-msg">{{ takeover.message }}</span>
             <span class="tk-alert-actions">
-              <el-button v-if="takeover.kind === 'input' || takeover.kind === 'altscreen'" size="small" type="primary" @click="continueTakeover">输入完成，继续</el-button>
-              <el-button v-else size="small" type="primary" @click="continueTakeover">继续等待</el-button>
-              <el-button size="small" @click="ctrlCTakeover">发送 Ctrl+C</el-button>
+              <el-button size="small" type="primary" @click="continueTakeover">
+                {{ takeover.kind === 'stall' ? '继续等待' : '输入完成，继续' }}
+              </el-button>
             </span>
           </div>
         </div>
@@ -1202,6 +1194,7 @@ function onGlobalKeydown(ev) {
 }
 .tk-alert-actions {
   flex: 0 0 auto;
+  margin-left: auto;
   display: flex;
   gap: 4px;
 }
