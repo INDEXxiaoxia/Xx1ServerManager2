@@ -38,6 +38,34 @@ func (c *CryptoManager) GenerateSalt() (string, error) {
 	return base64.StdEncoding.EncodeToString(salt), nil
 }
 
+// GenerateMachineSeed 生成本机密钥种子（32 字节随机，base64）。
+// 未设置主密码时用它派生"本机密钥"，让服务器密码仍能加密保存、重启后仍可读取，
+// 而不是因为没有主密码就丢弃密码。
+func (c *CryptoManager) GenerateMachineSeed() (string, error) {
+	return c.GenerateSalt()
+}
+
+// DeriveMachineKey 由本机种子派生密钥（不经过主密码）。
+// 安全性说明：种子的保护强度等同于 data.db 本身（明文存于数据库），
+// 用途只是"避免明文落盘"，不等同于主密码的加密强度；
+// 一旦用户设置了主密码，会改用主密钥重新加密。
+func (c *CryptoManager) DeriveMachineKey(seed string) error {
+	seedBytes, err := base64.StdEncoding.DecodeString(seed)
+	if err != nil {
+		seedBytes = []byte(seed)
+	}
+	if len(seedBytes) == 0 {
+		return errors.New("本机密钥种子为空")
+	}
+	c.masterKey = pbkdf2.Key(seedBytes, []byte("Xx1ServerManager2/machine"), pbkdf2Iterations, keyLen, sha256.New)
+	return nil
+}
+
+// ClearKey 清除内存中的密钥（锁定）：此后无法解密密码，直到再次解锁
+func (c *CryptoManager) ClearKey() {
+	c.masterKey = nil
+}
+
 // HashPassword 计算主密码哈希（SHA-256(密码+盐值) hex）
 func (c *CryptoManager) HashPassword(password, salt string) string {
 	saltBytes, err := base64.StdEncoding.DecodeString(salt)

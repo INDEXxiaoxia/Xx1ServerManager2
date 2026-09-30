@@ -25,12 +25,14 @@ const (
 
 // Server 服务器配置
 type Server struct {
-	ID        string       `json:"id"`
-	Name      string       `json:"name"`
-	Host      string       `json:"host"`
-	Port      int          `json:"port"`
-	Username  string       `json:"username"`
-	Password  string       `json:"password,omitempty"` // 密文存储，不返回
+	ID       string `json:"id"`
+	Name     string `json:"name"`
+	Host     string `json:"host"`
+	Port     int    `json:"port"`
+	Username string `json:"username"`
+	Password string `json:"password,omitempty"` // 密文存储，不返回
+	// GroupIDs 生效分组：**一个服务器只属于一个分组**，因此长度至多 1（首项生效）。
+	// 保持数组形态是为了不改动已落库的 group_ids 列与前端既有字段名；读写都会收敛。
 	GroupIDs  []string     `json:"groupIds"`
 	Status    ServerStatus `json:"status"`
 	CreatedAt time.Time    `json:"createdAt"`
@@ -182,6 +184,84 @@ type TextFileWriteRequest struct {
 	Encoding string `json:"encoding"`
 	KeepBOM  bool   `json:"keepBOM"` // 显式为 true 才会写入 UTF-8 BOM
 	EOL      string `json:"eol"`     // lf | crlf | cr
+}
+
+// ---- 运维工具 · 磁盘空间检测 ----
+//
+// 说明：本功能只做分析，不执行任何处置动作。DiskFinding.Command 是给用户复制到
+// 终端里自行执行的建议命令，后端绝不代跑。
+
+// DiskFinding 一条检测结论
+type DiskFinding struct {
+	Level    string `json:"level"`    // critical | warning | info | unavailable
+	Kind     string `json:"kind"`     // inode | deleted-open | gap | journal | docker | bigfile | permission | pseudo | reserved
+	Title    string `json:"title"`    // 一句话结论
+	Detail   string `json:"detail"`   // 为什么、要注意什么
+	Evidence string `json:"evidence"` // 原始输出片段（前端折叠展示）
+	Command  string `json:"command"`  // 建议命令（只复制，不执行）
+	// CommandNote 这条命令做什么、跑完会发生什么、有没有副作用。
+	// 用户看不懂命令时，"复制走自己跑"是有风险的，所以凡是给了 Command 就必须给 CommandNote。
+	CommandNote string `json:"commandNote"`
+	SizeMB      int64  `json:"sizeMB"` // 相关体积，无则 0
+}
+
+// DiskDirItem 目录占用条目（含下钻结果）
+type DiskDirItem struct {
+	Path        string  `json:"path"`
+	SizeMB      int64   `json:"sizeMB"`
+	Percent     float64 `json:"percent"`     // 占该盘已用容量的百分比
+	HasChildren bool    `json:"hasChildren"` // du -d1 的每一项都是目录，恒为 true
+}
+
+// DrillResult 一次目录下钻的结果。
+// Partial 为真表示 du 在超时上限处被中断，Items 只是「已统计到的部分」——
+// 必须让用户看到这一点，否则会把不完整的列表当成该目录的全部子项。
+type DrillResult struct {
+	Items   []DiskDirItem `json:"items"`
+	Partial bool          `json:"partial"`
+	Note    string        `json:"note"`
+}
+
+// DiskReport 一次磁盘检测的完整报告
+type DiskReport struct {
+	TaskID     string `json:"taskId"`
+	ServerID   string `json:"serverId"`
+	ServerName string `json:"serverName"`
+	Mount      string `json:"mount"`
+	Device     string `json:"device"`
+	Fstype     string `json:"fstype"`
+
+	TotalMB int64   `json:"totalMB"`
+	UsedMB  int64   `json:"usedMB"`
+	AvailMB int64   `json:"availMB"`
+	Usage   float64 `json:"usage"`
+
+	InodeTotal int64   `json:"inodeTotal"`
+	InodeUsed  int64   `json:"inodeUsed"`
+	InodeUsage float64 `json:"inodeUsage"`
+
+	Findings []DiskFinding `json:"findings"`
+	TopDirs  []DiskDirItem `json:"topDirs"`
+	// BigFiles 专项 / 全盘大文件
+	BigFiles []DiskDirItem `json:"bigFiles"`
+
+	// ScannedMB 一级目录扫描合计；GapMB = UsedMB - ScannedMB，即"没被目录扫描解释掉"的部分。
+	// 两个口径本来就不同（du 是 apparent/块占用），因此报告里不做"加起来等于已用"的暗示，
+	// 差额本身反而是最有价值的诊断信号。
+	ScannedMB int64 `json:"scannedMB"`
+	GapMB     int64 `json:"gapMB"`
+
+	// ReclaimableMB 报告中 critical/warning 项标注的体积合计（粗略口径：
+	// docker 项只计可回收量，容器日志按大文件计一次，不会与 docker 项重复计算）
+	ReclaimableMB int64 `json:"reclaimableMB"`
+
+	// Partial 体积段未完成（超时 / 被取消 / du 不可用）
+	Partial bool `json:"partial"`
+	// Stage 当前阶段：quickscan | volume | done
+	Stage     string   `json:"stage"`
+	Notes     []string `json:"notes"`
+	ElapsedMs int64    `json:"elapsedMs"`
+	ScannedAt string   `json:"scannedAt"`
 }
 
 // SystemService systemd 服务

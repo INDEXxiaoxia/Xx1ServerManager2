@@ -22,6 +22,13 @@ const routes = [
       // 兼容旧地址
       {path: 'upload', redirect: '/batch'},
       {path: 'execute', redirect: '/batch'},
+      {
+        // 运维工具：磁盘空间检测等排查小工具（只分析、不处置）
+        path: 'ops',
+        name: 'OpsTools',
+        component: () => import('@/views/ops/Index.vue'),
+        meta: {title: '运维工具'}
+      },
       {path: 'services', name: 'ServiceManage', component: () => import('@/views/services/Index.vue'), meta: {title: '服务管理'}},
       {path: 'terminal', name: 'Terminal', component: () => import('@/views/terminal/Index.vue'), meta: {title: 'SSH 终端'}},
       {path: 'groups', name: 'GroupManage', component: () => import('@/views/groups/Index.vue'), meta: {title: '分组管理'}},

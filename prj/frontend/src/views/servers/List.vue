@@ -3,11 +3,10 @@ import {ref, onMounted, computed} from 'vue'
 import {useRouter} from 'vue-router'
 import {ElMessage, ElMessageBox} from 'element-plus'
 import {api} from '@/api'
-import {useServerStore} from '@/store'
 import ServerFormDialog from '@/components/ServerFormDialog.vue'
+import {UNGROUPED, groupIdOf, matchServer, orderedGroups, groupNameOf, groupColorOf} from '@/utils/groups'
 
 const router = useRouter()
-const serverStore = useServerStore()
 
 const list = ref([])
 const groups = ref([])
@@ -18,22 +17,17 @@ const dialogVisible = ref(false)
 const editing = ref(null)
 const selected = ref([])
 
-const groupMap = computed(() => {
-  const m = {}
-  groups.value.forEach(g => { m[g.id] = g.name })
-  return m
-})
+// 分组下拉与总览同一套顺序：有服务器的分组在前，未分组最后
+const groupOptions = computed(() => orderedGroups(list.value, groups.value))
 
 const filtered = computed(() => {
-  let rows = [...list.value]
-  if (keyword.value) {
-    const k = keyword.value.toLowerCase()
-    rows = rows.filter(r => (r.name || '').toLowerCase().includes(k) || (r.host || '').toLowerCase().includes(k))
-  }
-  if (groupFilter.value) {
-    rows = rows.filter(r => (r.groupIds || []).includes(groupFilter.value))
-  }
-  return rows
+  return list.value.filter(r => {
+    if (!matchServer(r, keyword.value)) return false
+    if (!groupFilter.value) return true
+    const id = groupIdOf(r)
+    if (groupFilter.value === UNGROUPED) return !id
+    return id === groupFilter.value
+  })
 })
 
 async function load() {
@@ -41,6 +35,10 @@ async function load() {
   try {
     list.value = await api.listServers()
     groups.value = await api.listGroups()
+    // 分组被删除后筛选值可能已失效
+    if (groupFilter.value && groupFilter.value !== UNGROUPED && !groups.value.some(g => g.id === groupFilter.value)) {
+      groupFilter.value = ''
+    }
   } catch (e) {
     ElMessage.error('加载失败：' + e)
   } finally {
@@ -85,16 +83,6 @@ async function testRow(row) {
   }
 }
 
-function statusTag(status) {
-  const map = {
-    connected: {type: 'success', text: '已连接'},
-    disconnected: {type: 'info', text: '未连接'},
-    connecting: {type: 'warning', text: '连接中'},
-    error: {type: 'danger', text: '错误'}
-  }
-  return map[status] || {type: 'info', text: status}
-}
-
 function goMonitor(row) {
   router.push({path: '/monitor', query: {serverId: row.id}})
 }
@@ -103,6 +91,10 @@ function goTerminal(row) {
 }
 function goFiles(row) {
   router.push({path: '/files', query: {serverId: row.id}})
+}
+// 运维工具：直达磁盘空间检测并预选该服务器（不自动开始检测）
+function goOps(row) {
+  router.push({path: '/ops', query: {serverId: row.id, tool: 'disk'}})
 }
 
 // 「更多」下拉：测试连接 | 删除
@@ -117,10 +109,13 @@ function handleMore(command, row) {
     <div class="card">
       <div class="flex-between mb-12">
         <div>
-          <el-input v-model="keyword" placeholder="搜索名称/主机" clearable style="width: 220px; margin-right: 8px" />
-          <el-select v-model="groupFilter" placeholder="按分组筛选" clearable style="width: 160px">
-            <el-option v-for="g in groups" :key="g.id" :label="g.name" :value="g.id" />
+          <el-input v-model="keyword" placeholder="搜索名称/主机" clearable style="width: 220px; margin-right: 8px">
+            <template #prefix><el-icon><Search /></el-icon></template>
+          </el-input>
+          <el-select v-model="groupFilter" placeholder="按分组筛选" clearable style="width: 180px">
+            <el-option v-for="g in groupOptions" :key="g.id" :label="g.name + ' (' + g.count + ')'" :value="g.id" />
           </el-select>
+          <span class="text-muted count-text">显示 {{ filtered.length }} / 共 {{ list.length }} 台</span>
         </div>
         <div>
           <el-button type="danger" plain :disabled="!selected.length" @click="batchDelete">批量删除</el-button>
@@ -136,22 +131,20 @@ function handleMore(command, row) {
         <el-table-column prop="username" label="用户名" width="110" />
         <el-table-column label="分组" min-width="140">
           <template #default="{row}">
-            <el-tag v-for="gid in (row.groupIds || [])" :key="gid" size="small" class="mr-1">
-              {{ groupMap[gid] || gid }}
-            </el-tag>
+            <span v-if="groupIdOf(row)" class="group-cell">
+              <i class="dot" :style="{background: groupColorOf(groups, groupIdOf(row))}" />
+              {{ groupNameOf(groups, groupIdOf(row)) }}
+            </span>
+            <span v-else class="text-muted">未分组</span>
           </template>
         </el-table-column>
-        <el-table-column label="状态" width="90">
-          <template #default="{row}">
-            <el-tag :type="statusTag(row.status).type" size="small">{{ statusTag(row.status).text }}</el-tag>
-          </template>
-        </el-table-column>
-        <el-table-column label="操作" width="250" fixed="right">
+        <el-table-column label="操作" width="330" fixed="right">
           <template #default="{row}">
             <div class="op-bar">
               <el-button size="small" text type="primary" @click="goMonitor(row)">监控</el-button>
               <el-button size="small" text type="primary" @click="goTerminal(row)">终端</el-button>
               <el-button size="small" text type="primary" @click="goFiles(row)">文件</el-button>
+              <el-button size="small" text type="primary" @click="goOps(row)">监测运维</el-button>
               <el-button size="small" text type="primary" @click="openEdit(row)">编辑</el-button>
               <el-dropdown trigger="click" @command="cmd => handleMore(cmd, row)">
                 <el-button size="small" text class="more-btn">
@@ -175,7 +168,18 @@ function handleMore(command, row) {
 </template>
 
 <style scoped>
-.mr-1 { margin-right: 4px; }
+.count-text { margin-left: 4px; }
+.group-cell {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.group-cell .dot {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
 .op-bar {
   display: flex;
   align-items: center;

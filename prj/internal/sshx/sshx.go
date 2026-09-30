@@ -145,7 +145,11 @@ func (c *Client) ExecCommand(command string, timeout int, useSudo bool) (int, st
 	return 0, stdout.String(), cleanSudoErr(stderr.String(), c.Username)
 }
 
+// buildSudoCommand 把每条命令包成 `echo '密码' | sudo -S 命令`。
+// 逐行处理，因此传入的多行脚本每一行都必须自身完整（不能跨行写 if/for/heredoc）。
+// 密码里的单引号必须先转义，否则密码含 ' 时整条命令都会被 shell 拆坏。
 func buildSudoCommand(command, password string) string {
+	quoted := "'" + strings.ReplaceAll(password, "'", `'\''`) + "'"
 	lines := strings.Split(command, "\n")
 	var out []string
 	for _, line := range lines {
@@ -157,9 +161,9 @@ func buildSudoCommand(command, password string) string {
 			continue
 		}
 		if strings.HasPrefix(l, "sudo ") {
-			out = append(out, fmt.Sprintf("echo '%s' | sudo -S %s", password, strings.TrimPrefix(l, "sudo ")))
+			out = append(out, fmt.Sprintf("echo %s | sudo -S %s", quoted, strings.TrimPrefix(l, "sudo ")))
 		} else {
-			out = append(out, fmt.Sprintf("echo '%s' | sudo -S %s", password, l))
+			out = append(out, fmt.Sprintf("echo %s | sudo -S %s", quoted, l))
 		}
 	}
 	return strings.Join(out, "\n")

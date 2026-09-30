@@ -2,12 +2,14 @@
 import {ref, reactive, onMounted} from 'vue'
 import {ElMessage} from 'element-plus'
 import {api} from '@/api'
+import {useAppStore} from '@/store'
 import {applyTheme, THEMES, getStoredTheme} from '@/theme'
 
+const appStore = useAppStore()
 const settings = reactive({maxConcurrent: 5, uploadTimeout: 300, commandTimeout: 30, theme: 'light'})
 const masterSet = ref(false)
 const pwDialog = ref(false)
-const pw = reactive({p1: '', p2: ''})
+const pw = reactive({old: '', p1: '', p2: ''})
 const saving = ref(false)
 const configDir = ref('')
 const configDirExists = ref(false)
@@ -60,6 +62,7 @@ async function save() {
 }
 
 function openPwDialog() {
+  pw.old = ''
   pw.p1 = ''
   pw.p2 = ''
   pwDialog.value = true
@@ -69,12 +72,24 @@ async function setPassword() {
   if (pw.p1.length < 6) { ElMessage.warning('主密码至少 6 位'); return }
   if (pw.p1 !== pw.p2) { ElMessage.error('两次密码不一致'); return }
   try {
-    await api.setMasterPassword(pw.p1)
+    if (masterSet.value) {
+      if (!pw.old) { ElMessage.warning('请输入当前主密码'); return }
+      // 重置会先用旧密钥解出已存密码、再用新密钥重新加密，密码不会丢
+      const res = await appStore.changePassword(pw.old, pw.p1)
+      const n = (res && res.reencrypted) || 0
+      const failed = (res && res.failed) || 0
+      ElMessage.success(`${n} 台服务器的密码已用新主密码重新加密`)
+      if (failed > 0) {
+        ElMessage.warning(`${failed} 台服务器的密码解不开（历史密文），已原样保留，请在服务器列表里重新填写密码`)
+      }
+    } else {
+      await appStore.setPassword(pw.p1)
+      ElMessage.success('主密码设置成功')
+    }
     masterSet.value = true
     pwDialog.value = false
-    ElMessage.success('主密码设置成功')
   } catch (e) {
-    ElMessage.error('设置失败：' + e)
+    ElMessage.error('操作失败：' + e)
   }
 }
 </script>
@@ -123,21 +138,31 @@ async function setPassword() {
     <div class="card">
       <h3 class="card-title">安全</h3>
       <div class="flex-between mt-12">
-        <div>
+        <div class="sec-info">
           <div>主密码状态：
             <el-tag :type="masterSet ? 'success' : 'warning'">{{ masterSet ? '已设置' : '未设置' }}</el-tag>
+            <el-tag v-if="appStore.locked" type="info" class="ml-6">已锁定</el-tag>
           </div>
-          <div class="text-muted mt-12">主密码用于加密保存服务器登录密码，未设置时密码无法持久化保存。</div>
+          <div class="text-muted mt-12">
+            主密码用于加密保存服务器登录密码。未设置时，密码仍以本机密钥加密存放在本地数据库中，
+            重启后照常可用，不会丢失；设置主密码后会改用主密码派生密钥重新加密，安全性更高。
+          </div>
         </div>
         <el-button type="primary" @click="openPwDialog">{{ masterSet ? '重置主密码' : '设置主密码' }}</el-button>
       </div>
     </div>
 
-    <el-dialog v-model="pwDialog" :title="masterSet ? '重置主密码' : '设置主密码'" width="420px">
-      <el-form label-width="80px">
-        <el-form-item label="主密码"><el-input v-model="pw.p1" type="password" show-password /></el-form-item>
+    <el-dialog v-model="pwDialog" :title="masterSet ? '重置主密码' : '设置主密码'" width="440px">
+      <el-form label-width="90px">
+        <el-form-item v-if="masterSet" label="当前密码">
+          <el-input v-model="pw.old" type="password" show-password placeholder="当前主密码" />
+        </el-form-item>
+        <el-form-item label="新主密码"><el-input v-model="pw.p1" type="password" show-password /></el-form-item>
         <el-form-item label="确认密码"><el-input v-model="pw.p2" type="password" show-password /></el-form-item>
       </el-form>
+      <p v-if="masterSet" class="dialog-hint">
+        重置后已保存的服务器密码会用新主密码重新加密，不会丢失。
+      </p>
       <template #footer>
         <el-button @click="pwDialog = false">取消</el-button>
         <el-button type="primary" @click="setPassword">确定</el-button>
@@ -192,6 +217,14 @@ async function setPassword() {
   box-shadow: 0 0 6px rgba(33, 230, 255, .6);
 }
 .mono { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+.ml-6 { margin-left: 6px; }
+.sec-info { max-width: 620px; }
+.dialog-hint {
+  margin: -4px 0 0 90px;
+  font-size: 12px;
+  color: var(--ink-3);
+  line-height: 1.7;
+}
 .cfg-path {
   font-size: 12px;
   color: var(--ink-2);

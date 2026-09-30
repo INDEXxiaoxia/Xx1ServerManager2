@@ -133,9 +133,15 @@ func (a *App) StartMonitor(serverID string) error {
 				return
 			default:
 			}
+			// 每个采集周期都上报一次健康状态：总览的"在线/离线"据此推导，
+			// 而不是看库里那个从不更新的 status 字段——取到数据就是在线，
+			// 连接/取数失败才是离线。
 			if stats, err := a.fetchStats(serverID); err == nil {
 				a.saveMonitorPoint(serverID, stats)
 				runtime.EventsEmit(a.ctx, "monitor:data:"+serverID, stats)
+				a.emitMonitorStatus(serverID, true, "")
+			} else {
+				a.emitMonitorStatus(serverID, false, err.Error())
 			}
 			select {
 			case <-ctx.Done():
@@ -145,6 +151,15 @@ func (a *App) StartMonitor(serverID string) error {
 		}
 	}()
 	return nil
+}
+
+// emitMonitorStatus 上报一次监控健康状态（前端据此显示在线/离线与失败原因）
+func (a *App) emitMonitorStatus(serverID string, ok bool, message string) {
+	runtime.EventsEmit(a.ctx, "monitor:status:"+serverID, map[string]any{
+		"ok":      ok,
+		"message": message,
+		"at":      time.Now().UnixMilli(),
+	})
 }
 
 // StopMonitor 停止服务器实时监控

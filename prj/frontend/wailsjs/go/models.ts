@@ -67,6 +67,24 @@ export namespace models {
 	        this.error = source["error"];
 	    }
 	}
+	export class DiskDirItem {
+	    path: string;
+	    sizeMB: number;
+	    percent: number;
+	    hasChildren: boolean;
+	
+	    static createFrom(source: any = {}) {
+	        return new DiskDirItem(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.path = source["path"];
+	        this.sizeMB = source["sizeMB"];
+	        this.percent = source["percent"];
+	        this.hasChildren = source["hasChildren"];
+	    }
+	}
 	export class DiskInfo {
 	    mount: string;
 	    device: string;
@@ -94,6 +112,40 @@ export namespace models {
 	        this.isPseudo = source["isPseudo"];
 	        this.isReadOnly = source["isReadOnly"];
 	    }
+	}
+	export class DrillResult {
+	    items: DiskDirItem[];
+	    partial: boolean;
+	    note: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new DrillResult(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.items = this.convertValues(source["items"], DiskDirItem);
+	        this.partial = source["partial"];
+	        this.note = source["note"];
+	    }
+	
+		convertValues(a: any, classs: any, asMap: boolean = false): any {
+		    if (!a) {
+		        return a;
+		    }
+		    if (a.slice && a.map) {
+		        return (a as any[]).map(elem => this.convertValues(elem, classs));
+		    } else if ("object" === typeof a) {
+		        if (asMap) {
+		            for (const key of Object.keys(a)) {
+		                a[key] = new classs(a[key]);
+		            }
+		            return a;
+		        }
+		        return new classs(a);
+		    }
+		    return a;
+		}
 	}
 	export class FileEntry {
 	    name: string;

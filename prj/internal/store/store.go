@@ -238,6 +238,27 @@ func (s *Store) DeleteServer(id string) error {
 	return err
 }
 
+// SetServerGroup 只写入服务器的分组列（与 updated_at）。
+// 单独一条语句而不是复用 UpdateServer：批量分配分组不该重写密码/状态等无关列，
+// 避免把并发修改的其他字段一起盖回旧值。
+func (s *Store) SetServerGroup(serverID, groupID string, at time.Time) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	_, err := s.db.Exec(
+		`UPDATE servers SET group_ids=?, updated_at=? WHERE id=?`,
+		joinIDs(groupIDsOf(groupID)), at.Format(time.RFC3339), serverID,
+	)
+	return err
+}
+
+// SetServerPassword 只写入密码密文列（主密码变更后重新加密用）
+func (s *Store) SetServerPassword(serverID, cipher string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	_, err := s.db.Exec(`UPDATE servers SET password=? WHERE id=?`, cipher, serverID)
+	return err
+}
+
 // ---- 分组 ----
 
 func (s *Store) GetGroups() ([]models.Group, error) {
@@ -598,8 +619,19 @@ func (s *Store) SetSetting(key, value string) error {
 }
 
 // ---- 辅助 ----
+// 分组单属约束：一个服务器只属于一个分组，group_ids 里至多保留一个 id（首项生效）。
+// 历史数据里若存了多个 id，读取与写入都会收敛为首项，任一次编辑即把收敛结果落库。
+
+// groupIDsOf 把"生效分组 id"包成存储用的数组形态（空 id 即未分组）
+func groupIDsOf(groupID string) []string {
+	if groupID == "" {
+		return nil
+	}
+	return []string{groupID}
+}
 
 func joinIDs(ids []string) string {
+	ids = normalizeGroupIDs(ids)
 	if len(ids) == 0 {
 		return ""
 	}
@@ -615,5 +647,20 @@ func parseIDs(s string) []string {
 	if err := json.Unmarshal([]byte(s), &ids); err != nil {
 		return nil
 	}
-	return ids
+	return normalizeGroupIDs(ids)
+}
+
+// normalizeGroupIDs 去空串、去重，并只保留第一个 id
+func normalizeGroupIDs(ids []string) []string {
+	out := make([]string, 0, 1)
+	for _, id := range ids {
+		id = strings.TrimSpace(id)
+		if id == "" {
+			continue
+		}
+		if len(out) == 0 {
+			out = append(out, id)
+		}
+	}
+	return out
 }

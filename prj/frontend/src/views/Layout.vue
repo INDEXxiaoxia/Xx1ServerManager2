@@ -1,16 +1,18 @@
 <script setup>
 import {computed, ref, onMounted, onBeforeUnmount} from 'vue'
 import {useRoute} from 'vue-router'
-import {ElMessage} from 'element-plus'
+import {ElMessage, ElMessageBox} from 'element-plus'
 import {useBatchStore} from '@/store/batch'
+import {useAppStore} from '@/store'
 
 const route = useRoute()
 const collapsed = ref(false)
 const batchStore = useBatchStore()
+const appStore = useAppStore()
 
 // 需要保活的页面（按组件名匹配，名字由页面里的 defineOptions 声明）
 // 只有 SSH 终端页需要：切走后会话与窗口状态继续保留，切回来即原样恢复。
-const KEEP_ALIVE = ['TerminalPage']
+const KEEP_ALIVE = ['TerminalPage', 'OpsPage']
 
 // 批量任务的进度事件在这里统一监听：即使用户切到其他页面，
 // 上传/执行进度也会持续记录，回到批量操作页不会出现状态断档
@@ -21,6 +23,7 @@ onBeforeUnmount(() => {
   batchStore.unbindEvents()
 })
 
+// 服务管理页暂未定型，先隐藏菜单入口（路由与页面保留，想清楚后把这一行加回来即可）
 const menus = [
   {path: '/dashboard', title: '总览', icon: 'Odometer'},
   {path: '/servers', title: '服务器列表', icon: 'Connection'},
@@ -28,7 +31,7 @@ const menus = [
   {path: '/terminal', title: 'SSH 终端', icon: 'Monitor'},
   {path: '/files', title: '文件管理', icon: 'Folder'},
   {path: '/batch', title: '批量操作', icon: 'Upload'},
-  {path: '/services', title: '服务管理', icon: 'Setting'},
+  {path: '/ops', title: '运维工具', icon: 'DataAnalysis'},
   {path: '/groups', title: '分组管理', icon: 'FolderOpened'},
   {path: '/presets', title: '预设管理', icon: 'Collection'},
   {path: '/settings', title: '设置', icon: 'Tools'}
@@ -43,8 +46,26 @@ function toggleCollapse() {
   collapsed.value = !collapsed.value
 }
 
-function lock() {
-  ElMessage.info('锁定功能将在后续版本开放')
+// lock 锁定：清掉内存密钥、关闭监控与所有 SSH 会话。
+// 已设置主密码时解锁要重新输密码，值得先确认一次；未设置主密码时锁定只是遮挡，直接执行。
+async function lock() {
+  if (appStore.masterPasswordSet) {
+    try {
+      await ElMessageBox.confirm(
+        '锁定后需要重新输入主密码才能解锁，监控、终端与文件管理会话会一并关闭（未保存的表单内容会丢失）。',
+        '锁定应用',
+        {type: 'warning', confirmButtonText: '锁定', cancelButtonText: '取消'}
+      )
+    } catch (e) {
+      return
+    }
+  }
+  try {
+    await appStore.lock()
+    if (!appStore.masterPasswordSet) ElMessage.success('已锁定，点击一次即可解锁')
+  } catch (e) {
+    ElMessage.error('锁定失败：' + e)
+  }
 }
 </script>
 
@@ -72,7 +93,10 @@ function lock() {
           <div class="header-title">{{ currentTitle }}</div>
         </div>
         <div class="header-right">
-          <el-button text @click="lock"><el-icon><Lock /></el-icon> 锁定</el-button>
+          <el-button text @click="lock"
+                     :title="appStore.masterPasswordSet ? '锁定：解锁需要重新输入主密码' : '锁定：未设置主密码，点击一次即可解锁'">
+            <el-icon><Lock /></el-icon> 锁定
+          </el-button>
         </div>
       </el-header>
       <el-main class="main">

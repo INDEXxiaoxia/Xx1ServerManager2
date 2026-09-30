@@ -1,5 +1,5 @@
 <script setup>
-import {ref, reactive} from 'vue'
+import {ref} from 'vue'
 import {ElMessage} from 'element-plus'
 import {useAppStore} from '@/store'
 
@@ -7,16 +7,20 @@ const appStore = useAppStore()
 const password = ref('')
 const loading = ref(false)
 
+// 未设置主密码时锁定只是一次"遮挡"：密钥由本机种子派生，没有可验证的凭据，
+// 所以这里给一个一键解锁；密码本身始终加密保存在库里，锁定不会删除任何东西。
 async function doUnlock() {
-  if (!password.value) {
-    ElMessage.warning('请输入主密码')
-    return
-  }
   loading.value = true
   try {
-    const ok = await appStore.unlock(password.value)
-    if (!ok) {
-      ElMessage.error('主密码错误')
+    if (appStore.masterPasswordSet) {
+      if (!password.value) {
+        ElMessage.warning('请输入主密码')
+        return
+      }
+      const ok = await appStore.unlock(password.value)
+      if (!ok) ElMessage.error('主密码错误')
+    } else {
+      await appStore.unlockWithoutPassword()
     }
   } catch (e) {
     ElMessage.error('解锁失败：' + e)
@@ -35,13 +39,29 @@ async function doUnlock() {
       <div class="brand-row">
         <h2 class="brand">Xx1ServerManager2</h2>
       </div>
-      <p class="desc">请输入主密码以解锁加密的服务器凭据</p>
-      <el-input v-model="password" type="password" show-password
-                placeholder="主密码" size="large"
-                @keyup.enter="doUnlock" />
-      <el-button type="primary" size="large" class="btn" :loading="loading" @click="doUnlock">
-        解锁
-      </el-button>
+
+      <template v-if="appStore.masterPasswordSet">
+        <p class="desc">请输入主密码以解锁加密的服务器凭据</p>
+        <el-input v-model="password" type="password" show-password
+                  placeholder="主密码" size="large"
+                  @keyup.enter="doUnlock" />
+        <el-button type="primary" size="large" class="btn" :loading="loading" @click="doUnlock">
+          解锁
+        </el-button>
+        <p class="hint">主密码状态：已设置</p>
+      </template>
+
+      <template v-else>
+        <p class="desc">应用已锁定</p>
+        <el-button type="primary" size="large" class="btn no-gap" :loading="loading" @click="doUnlock">
+          解锁
+        </el-button>
+        <p class="hint">
+          未设置主密码：凭据由本机密钥加密保存，锁定只是遮挡界面，点击即可继续。<br />
+          已保存的服务器密码不会被删除，可在「设置 → 安全」中设置主密码。
+        </p>
+        <el-tag size="small" type="warning" class="status-tag">主密码：未设置</el-tag>
+      </template>
     </div>
   </div>
 </template>
@@ -122,7 +142,22 @@ async function doUnlock() {
   margin-top: 20px;
   border-radius: 12px;
 }
+.btn.no-gap {
+  margin-top: 0;
+}
 .btn:hover {
   transform: translateY(-1px);
+}
+.hint {
+  margin-top: 16px;
+  color: var(--ink-3);
+  font-size: 12px;
+  line-height: 1.7;
+  text-align: center;
+}
+.status-tag {
+  display: block;
+  width: fit-content;
+  margin: 12px auto 0;
 }
 </style>

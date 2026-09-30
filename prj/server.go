@@ -19,8 +19,12 @@ func (a *App) getServerWithPassword(id string) (*models.Server, error) {
 	if sv == nil {
 		return nil, fmt.Errorf("服务器不存在")
 	}
-	if sv.Password != "" && a.crypto.HasMasterKey() {
+	if sv.Password != "" {
 		if dec, err := a.crypto.DecryptPassword(sv.Password); err == nil {
+			sv.Password = dec
+		} else if dec, ok := a.decryptWithMachineKey(sv.Password); ok {
+			// 主密码设置之前用本机密钥加密的历史行：当前密钥解不开时回退本机密钥，
+			// 保证"没设主密码时保存的密码"在设置主密码后也不会变成不可用。
 			sv.Password = dec
 		}
 	}
@@ -57,24 +61,38 @@ func (a *App) SaveServer(sv models.Server) (models.Server, error) {
 	existing, _ := a.store.GetServerByID(sv.ID)
 	now := time.Now()
 	isNew := existing == nil
+	// plain 是本次提交的**新明文密码**，空表示"不改密码"。
+	// 必须先在这里分流：早先把原密文塞回 sv.Password 再加密，会让"改名不改密码"的
+	// 编辑把密文二次加密，密码当场失效。
+	plain := sv.Password
 	if isNew {
 		sv.ID = uuid.NewString()
 		sv.CreatedAt = now
 		sv.Status = models.StatusDisconnected
 	} else {
-		if sv.Password == "" {
-			sv.Password = existing.Password // 保持原密码
-		}
 		sv.CreatedAt = existing.CreatedAt
 	}
+	// 分组单属：前端只提交一个分组，这里再兜一层，避免多值落库
+	sv.GroupIDs = groupIDsFor(effectiveGroupID(sv.GroupIDs))
 	sv.UpdatedAt = now
-	if sv.Password != "" && a.crypto.HasMasterKey() {
-		enc, err := a.crypto.EncryptPassword(sv.Password)
+
+	switch {
+	case plain != "":
+		// 没有可用密钥时宁可报错，也绝不把明文密码写进数据库
+		if a.crypto == nil || !a.crypto.HasMasterKey() {
+			return sv, errNoEncryptionKey
+		}
+		enc, err := a.crypto.EncryptPassword(plain)
 		if err != nil {
 			return sv, err
 		}
 		sv.Password = enc
+	case !isNew:
+		sv.Password = existing.Password // 沿用原密文，原样写回
+	default:
+		sv.Password = ""
 	}
+
 	if isNew {
 		return sv, a.store.AddServer(&sv)
 	}

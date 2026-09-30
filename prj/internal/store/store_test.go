@@ -127,6 +127,109 @@ func TestDisksFromJSONFallback(t *testing.T) {
 	}
 }
 
+// TestGroupIDsCollapseToSingle 分组单属：写入多个分组只保留首个（含空串过滤）
+func TestGroupIDsCollapseToSingle(t *testing.T) {
+	st, err := NewStore(filepath.Join(t.TempDir(), "groups.db"))
+	if err != nil {
+		t.Fatalf("建库失败: %v", err)
+	}
+	defer st.Close()
+
+	now := time.Now()
+	sv := &models.Server{
+		ID: "s1", Name: "web-01", Host: "10.0.0.1", Port: 22, Username: "root",
+		GroupIDs: []string{"g1", "g2", "g3"}, CreatedAt: now, UpdatedAt: now,
+	}
+	if err := st.AddServer(sv); err != nil {
+		t.Fatalf("写入服务器失败: %v", err)
+	}
+
+	got, err := st.GetServerByID("s1")
+	if err != nil || got == nil {
+		t.Fatalf("读取服务器失败: %v", err)
+	}
+	if len(got.GroupIDs) != 1 || got.GroupIDs[0] != "g1" {
+		t.Fatalf("多分组应收敛为首项 g1，got %+v", got.GroupIDs)
+	}
+
+	// 空串/重复不再产生多值
+	if ids := parseIDs(`["","g9","g9"]`); len(ids) != 1 || ids[0] != "g9" {
+		t.Fatalf("parseIDs 应收敛为 [g9]，got %+v", ids)
+	}
+	if s := joinIDs([]string{"", ""}); s != "" {
+		t.Fatalf("全空分组应序列化为空串，got %q", s)
+	}
+}
+
+// TestLegacyMultiGroupCollapse 老库直插的多分组行读取时也收敛为首项
+func TestLegacyMultiGroupCollapse(t *testing.T) {
+	dbPath := filepath.Join(t.TempDir(), "legacy_groups.db")
+	st, err := NewStore(dbPath)
+	if err != nil {
+		t.Fatalf("建库失败: %v", err)
+	}
+	now := time.Now().Format(time.RFC3339)
+	if _, err := st.db.Exec(
+		`INSERT INTO servers (id,name,host,port,username,password,group_ids,status,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?)`,
+		"s1", "db-01", "10.0.0.2", 22, "root", "", `["gb","ga"]`, "disconnected", now, now,
+	); err != nil {
+		t.Fatalf("直插老数据失败: %v", err)
+	}
+	got, err := st.GetServers()
+	if err != nil {
+		t.Fatalf("读取失败: %v", err)
+	}
+	if len(got) != 1 || len(got[0].GroupIDs) != 1 || got[0].GroupIDs[0] != "gb" {
+		t.Fatalf("老数据应收敛为首项 gb，got %+v", got)
+	}
+	if err := st.Close(); err != nil {
+		t.Fatalf("关闭失败: %v", err)
+	}
+}
+
+// TestSetServerGroupRoundTrip 只改分组列：其他字段（密码密文等）不受影响
+func TestSetServerGroupRoundTrip(t *testing.T) {
+	st, err := NewStore(filepath.Join(t.TempDir(), "setgroup.db"))
+	if err != nil {
+		t.Fatalf("建库失败: %v", err)
+	}
+	defer st.Close()
+
+	now := time.Now()
+	sv := &models.Server{
+		ID: "s1", Name: "web-01", Host: "10.0.0.1", Port: 22, Username: "root",
+		Password: "CIPHERTEXT", GroupIDs: []string{"g1"}, Status: models.StatusConnected,
+		CreatedAt: now, UpdatedAt: now,
+	}
+	if err := st.AddServer(sv); err != nil {
+		t.Fatalf("写入失败: %v", err)
+	}
+
+	at := now.Add(time.Minute)
+	if err := st.SetServerGroup("s1", "g2", at); err != nil {
+		t.Fatalf("设置分组失败: %v", err)
+	}
+	got, _ := st.GetServerByID("s1")
+	if len(got.GroupIDs) != 1 || got.GroupIDs[0] != "g2" {
+		t.Fatalf("分组应变为 g2，got %+v", got.GroupIDs)
+	}
+	if got.Password != "CIPHERTEXT" || got.Name != "web-01" {
+		t.Fatalf("无关列不应被改写: %+v", got)
+	}
+	if !got.UpdatedAt.Equal(at.Truncate(time.Second)) && got.UpdatedAt.Before(at.Add(-time.Second)) {
+		t.Fatalf("updated_at 应被更新，got %v", got.UpdatedAt)
+	}
+
+	// 空分组 id = 移出分组
+	if err := st.SetServerGroup("s1", "", at); err != nil {
+		t.Fatalf("移出分组失败: %v", err)
+	}
+	got, _ = st.GetServerByID("s1")
+	if len(got.GroupIDs) != 0 {
+		t.Fatalf("移出后不应有分组，got %+v", got.GroupIDs)
+	}
+}
+
 // TestMigrationIdempotent 重复打开同一库不应因重复迁移报错
 func TestMigrationIdempotent(t *testing.T) {
 	dbPath := filepath.Join(t.TempDir(), "repeat.db")

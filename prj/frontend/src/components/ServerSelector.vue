@@ -37,6 +37,7 @@
 <script setup>
 import {ref, computed, watch, onMounted} from 'vue'
 import {api} from '@/api'
+import {groupIdOf, orderedGroups} from '@/utils/groups'
 
 const props = defineProps({
   // 已选中的服务器 id：从外部状态恢复选择（如离开页面再回来）
@@ -51,19 +52,16 @@ const checkedNodes = ref([])
 
 const treeProps = {children: 'children', label: 'label'}
 
+// 分组顺序与总览一致：有服务器的分组在前，未分组最后
 const treeData = computed(() => {
   const data = []
   const svs = servers.value || []
-  const grps = groups.value || []
-  const ungrouped = svs.filter(s => !s.groupIds || !s.groupIds.length)
-  if (ungrouped.length) {
-    data.push({id: 'ungrouped', label: '未分组', type: 'group', children: ungrouped.map(toNode)})
-  }
-  grps.forEach(g => {
-    const gs = svs.filter(s => (s.groupIds || []).includes(g.id))
-    if (gs.length) data.push({id: g.id, label: `${g.name} (${gs.length})`, type: 'group', children: gs.map(toNode)})
-  })
-  return data
+  return orderedGroups(svs, groups.value)
+    .map(g => {
+      const gs = g.isUngrouped ? svs.filter(s => !groupIdOf(s)) : svs.filter(s => groupIdOf(s) === g.id)
+      return {id: g.id, label: `${g.name} (${gs.length})`, type: 'group', children: gs.map(toNode)}
+    })
+    .filter(node => node.children.length > 0)
 })
 
 function toNode(s) {

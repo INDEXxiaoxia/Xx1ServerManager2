@@ -2,6 +2,7 @@
 import {ref, computed, watch, onMounted} from 'vue'
 import {ElMessage} from 'element-plus'
 import {api} from '@/api'
+import {groupIdOf, groupColorOf} from '@/utils/groups'
 import {useBatchStore} from '@/store/batch'
 
 // 服务器选择由批量操作页统一提供（左侧面板）
@@ -38,9 +39,7 @@ async function load() {
 onMounted(load)
 
 function getServerGroupColor(server) {
-  if (!server.groupIds || !server.groupIds.length) return 'var(--ink-3)'
-  const g = groups.value.find(x => x.id === server.groupIds[0])
-  return g?.color || 'var(--ink-3)'
+  return groupColorOf(groups.value, groupIdOf(server))
 }
 
 function usePreset(p) {

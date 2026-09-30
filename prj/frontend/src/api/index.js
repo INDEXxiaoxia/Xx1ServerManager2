@@ -10,8 +10,12 @@ export const api = {
   getAppInfo: () => App.GetAppInfo(),
   isMasterPasswordSet: () => App.IsMasterPasswordSet(),
   isUnlocked: () => App.IsUnlocked(),
+  isLocked: () => App.IsLocked(),
+  lock: () => App.Lock(),
+  unlockWithoutPassword: () => App.UnlockWithoutPassword(),
   setMasterPassword: (p) => App.SetMasterPassword(p),
   verifyMasterPassword: (p) => App.VerifyMasterPassword(p),
+  changeMasterPassword: (oldPassword, newPassword) => App.ChangeMasterPassword(oldPassword, newPassword),
 
   // 服务器
   listServers: () => asArray(App.ListServers()),
@@ -21,12 +25,13 @@ export const api = {
   deleteServers: (ids) => App.DeleteServers(ids),
   testConnection: (host, port, username, password) => App.TestServerConnection(host, port, username, password),
   testStoredServer: (id) => App.TestStoredServer(id),
-  setServerStatus: (id, status) => App.SetServerStatus(id, status),
 
   // 分组
   listGroups: () => asArray(App.ListGroups()),
   saveGroup: (g) => App.SaveGroup(g),
   deleteGroup: (id) => App.DeleteGroup(id),
+  // 批量分配：勾选集合即该分组的成员集合（groupID 传空串表示移出分组）
+  assignGroupServers: (groupID, serverIDs) => App.AssignGroupServers(groupID, serverIDs),
 
   // 预设
   listPresetCommands: () => asArray(App.ListPresetCommands()),
@@ -88,7 +93,17 @@ export const api = {
   terminalResize: (id, cols, rows) => App.TerminalResize(id, cols, rows),
   terminalClose: (id) => App.TerminalClose(id),
   // 在指定服务器上执行一次性命令（不占用交互式终端会话）
-  runRemoteCommand: (serverId, command, timeout) => App.RunRemoteCommand(serverId, command, timeout)
+  runRemoteCommand: (serverId, command, timeout) => App.RunRemoteCommand(serverId, command, timeout),
+
+  // 运维工具 · 磁盘空间检测
+  // 检测是异步的：StartDiskAnalysis 返回 taskId，进度与报告通过
+  // ops:disk:progress|report|done:<taskId> 事件推送。
+  // taskId 由调用方先生成并「先订阅、再发起」，避免极快失败时漏掉首个事件。
+  listServerDisks: (serverId) => asArray(App.ListServerDisks(serverId)),
+  startDiskAnalysis: (serverId, mount, useSudo, taskId) => App.StartDiskAnalysis(serverId, mount, useSudo, taskId),
+  cancelDiskAnalysis: (taskId) => App.CancelDiskAnalysis(taskId),
+  // 返回 {items, partial, note}：partial 表示 du 被超时中断、items 只是统计到的部分
+  drillDiskDir: (serverId, mount, path, useSudo) => App.DrillDiskDir(serverId, mount, path, useSudo)
 }
 
 // Wails 事件封装

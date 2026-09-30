@@ -15,14 +15,14 @@ import (
 
 // TerminalSession 交互式 SSH 终端会话
 type TerminalSession struct {
-	mu     sync.Mutex
-	ID     string
+	mu       sync.Mutex
+	ID       string
 	ServerID string
-	client *sshx.Client
-	sess   *ssh.Session
-	stdin  io.Writer
-	out    io.ReadCloser
-	closed bool
+	client   *sshx.Client
+	sess     *ssh.Session
+	stdin    io.Writer
+	out      io.ReadCloser
+	closed   bool
 }
 
 // TerminalOpen 打开新的 SSH 终端会话
@@ -205,4 +205,17 @@ func (a *App) TerminalClose(id string) error {
 	ts.sess.Close()
 	ts.client.Close()
 	return nil
+}
+
+// closeAllTerminals 关闭全部交互式终端会话（锁定时调用，不依赖前端是否来得及发关闭请求）
+func (a *App) closeAllTerminals() {
+	a.terminalMu.Lock()
+	ids := make([]string, 0, len(a.terminals))
+	for id := range a.terminals {
+		ids = append(ids, id)
+	}
+	a.terminalMu.Unlock()
+	for _, id := range ids {
+		_ = a.TerminalClose(id)
+	}
 }
