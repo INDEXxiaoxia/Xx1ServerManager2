@@ -51,6 +51,16 @@ const takeoverFull = computed(() => !!takeover.value.full)
 // 键盘/粘贴是否被接管收回（暂停等输入时会放行）
 const inputLocked = computed(() => !!takeover.value.locked)
 
+// AI 接管刚触发时播一次"开大"动画（约 1.6s），之后只留常驻 HUD，
+// 避免一堆一次性图层长期挂在那里白耗合成器
+const castPlaying = ref(false)
+let castTimer = null
+function playCast() {
+  castPlaying.value = true
+  if (castTimer) clearTimeout(castTimer)
+  castTimer = setTimeout(() => { castPlaying.value = false }, 1600)
+}
+
 function onTakeoverUpdate(st) {
   const next = st || {
     active: false, full: false, paused: false, kind: '', locked: false,
@@ -59,6 +69,7 @@ function onTakeoverUpdate(st) {
   const wasFull = takeoverFull.value
   takeover.value = next
   if (next.full && !wasFull) {
+    playCast()
     // 接管期间禁止多终端并行：同步模式会自动关掉
     if (syncMode.value) {
       syncMode.value = false
@@ -67,6 +78,7 @@ function onTakeoverUpdate(st) {
     ElMessage.info('AI 已接管当前终端：需要你输入密码时终端会自动解锁并提示')
   }
   if (!next.full && wasFull) {
+    castPlaying.value = false
     ElMessage.success('AI 接管已结束，终端已恢复可操作')
   }
 }
@@ -777,6 +789,7 @@ onDeactivated(() => {
 })
 
 onBeforeUnmount(() => {
+  if (castTimer) clearTimeout(castTimer)
   unbindGlobalListeners()
   if (pasteInput && pasteInput.parentNode) pasteInput.parentNode.removeChild(pasteInput)
   pasteInput = null
@@ -846,6 +859,32 @@ function onGlobalKeydown(ev) {
             <rect class="tk-l1" />
             <rect class="tk-l2" />
           </svg>
+
+          <!-- 常驻科技 HUD：四角括号 + 边缘数据刻度 + 缓慢扫描线 + 角落读数 -->
+          <div class="tk-hud">
+            <i class="tk-corner tl" />
+            <i class="tk-corner tr" />
+            <i class="tk-corner bl" />
+            <i class="tk-corner br" />
+            <i class="tk-ticks top" />
+            <i class="tk-ticks bottom" />
+            <i class="tk-scanline" />
+            <span class="tk-hud-text tl">AI CONTROL</span>
+            <span class="tk-hud-text br">
+              <i class="tk-cursor" />{{ takeover.paused ? 'STANDBY' : 'ACTIVE' }}
+            </span>
+          </div>
+
+          <!-- 开大动画：只在接管刚开始的 1.6 秒内挂载（闪光 + 冲击环 + 扫描 + 瞬时故障条） -->
+          <div v-if="castPlaying" class="tk-cast">
+            <i class="tk-flash" />
+            <i class="tk-ring r1" />
+            <i class="tk-ring r2" />
+            <i class="tk-sweep" />
+            <i class="tk-glitch g1" />
+            <i class="tk-glitch g2" />
+            <i class="tk-glitch g3" />
+          </div>
           <!-- 常驻：右上角小徽标，不挡内容 -->
           <div class="tk-badge">
             <i class="tk-pulse" />
@@ -1091,6 +1130,10 @@ function onGlobalKeydown(ev) {
   inset: 0;
   z-index: 6;
   pointer-events: none; /* 默认穿透：终端照常可用（暂停时键盘是放行的） */
+  /* VFX 霓虹色：这一层刻意用固定霓虹色（不跟主题走）——它表达的是"AI 正在接管"，
+     而不是应用 UI 的一部分；终端底色本身是深色，霓虹色在三套主题下都够亮。 */
+  --vfx-1: #4DE1FF;
+  --vfx-2: #FF4FB0;
 }
 /* 内发光 + 呼吸：只做"周围一圈"，范围精确控制在 12~26px。
    用四条线性渐变拼出来（每边一条），所以宽度可控、转角自然；
@@ -1119,9 +1162,179 @@ function onGlobalKeydown(ev) {
   0%, 100% { opacity: .28; }
   50% { opacity: 1; }
 }
+
+/* ---- 常驻科技 HUD：四角括号 + 边缘刻度 + 扫描线 + 角落读数 ---- */
+.tk-hud {
+  position: absolute;
+  inset: 0;
+  z-index: 3;
+  pointer-events: none;
+  animation: tk-hud-in .45s ease-out both;
+}
+@keyframes tk-hud-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+/* 四角 L 形括号：整个 HUD 的"骨架"，带霓虹外发光并参与呼吸 */
+.tk-corner {
+  position: absolute;
+  width: 30px;
+  height: 30px;
+  border: 0 solid var(--vfx-1);
+  filter: drop-shadow(0 0 6px rgba(77, 225, 255, .75));
+  animation: tk-hud-breathe 2.2s ease-in-out infinite;
+}
+.tk-corner.tl { top: 6px; left: 6px; border-top-width: 2px; border-left-width: 2px; }
+.tk-corner.tr { top: 6px; right: 6px; border-top-width: 2px; border-right-width: 2px; }
+.tk-corner.bl { bottom: 6px; left: 6px; border-bottom-width: 2px; border-left-width: 2px; }
+.tk-corner.br { bottom: 6px; right: 6px; border-bottom-width: 2px; border-right-width: 2px; }
+@keyframes tk-hud-breathe {
+  0%, 100% { opacity: .5; }
+  50% { opacity: 1; }
+}
+/* 上/下边缘的数据刻度，缓慢横向流动 */
+.tk-ticks {
+  position: absolute;
+  left: 0;
+  right: 0;
+  height: 6px;
+  opacity: .45;
+  background-image: repeating-linear-gradient(90deg, var(--vfx-1) 0 2px, transparent 2px 14px);
+  animation: tk-ticks-run 6s linear infinite;
+}
+.tk-ticks.top {
+  top: 0;
+  -webkit-mask-image: linear-gradient(to bottom, #000, transparent);
+  mask-image: linear-gradient(to bottom, #000, transparent);
+}
+.tk-ticks.bottom {
+  bottom: 0;
+  -webkit-mask-image: linear-gradient(to top, #000, transparent);
+  mask-image: linear-gradient(to top, #000, transparent);
+}
+@keyframes tk-ticks-run {
+  to { background-position-x: 14px; }
+}
+/* 缓慢扫过整个终端的光带（像扫描仪） */
+.tk-scanline {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: -30px;
+  height: 26px;
+  border-bottom: 1px solid var(--vfx-1);
+  background: linear-gradient(to bottom, transparent, rgba(77, 225, 255, .18) 70%, rgba(77, 225, 255, .5));
+  animation: tk-scan 4.5s cubic-bezier(.45, 0, .55, 1) infinite;
+}
+@keyframes tk-scan {
+  0% { top: -30px; opacity: 0; }
+  12% { opacity: .85; }
+  88% { opacity: .85; }
+  100% { top: 100%; opacity: 0; }
+}
+/* 角落读数：等宽小字 + 闪烁光标 */
+.tk-hud-text {
+  position: absolute;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-family: ui-monospace, Consolas, monospace;
+  font-size: 9.5px;
+  letter-spacing: 2px;
+  color: var(--vfx-1);
+  opacity: .72;
+  text-shadow: 0 0 6px rgba(77, 225, 255, .65);
+  white-space: nowrap;
+}
+.tk-hud-text.tl { left: 42px; top: 9px; }
+.tk-hud-text.br { right: 42px; bottom: 9px; }
+.tk-cursor {
+  width: 5px;
+  height: 9px;
+  background: var(--vfx-2);
+  box-shadow: 0 0 6px var(--vfx-2);
+  animation: tk-blink 1s steps(1, end) infinite;
+}
+@keyframes tk-blink {
+  50% { opacity: 0; }
+}
+
+/* ---- 开大动画：接管触发瞬间播一次（约 1.6s） ---- */
+.tk-cast {
+  position: absolute;
+  inset: 0;
+  z-index: 4;
+  pointer-events: none;
+}
+/* 白青闪光 */
+.tk-flash {
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(circle at 50% 50%,
+    rgba(255, 255, 255, .92),
+    rgba(77, 225, 255, .45) 42%,
+    transparent 74%);
+  animation: tk-flash .45s ease-out both;
+}
+@keyframes tk-flash {
+  from { opacity: 1; }
+  to { opacity: 0; }
+}
+/* 冲击环：从略小扩到略大并消散，两枚错开（青 + 粉） */
+.tk-ring {
+  position: absolute;
+  inset: 0;
+  border: 2px solid var(--vfx-1);
+  border-radius: 12px;
+  box-shadow: 0 0 26px rgba(77, 225, 255, .6), inset 0 0 26px rgba(77, 225, 255, .45);
+  animation: tk-ring-out .9s cubic-bezier(.2, .7, .2, 1) both;
+}
+.tk-ring.r2 {
+  border-color: var(--vfx-2);
+  box-shadow: 0 0 26px rgba(255, 79, 176, .55), inset 0 0 26px rgba(255, 79, 176, .4);
+  animation-delay: .16s;
+}
+@keyframes tk-ring-out {
+  from { transform: scale(.86); opacity: 1; }
+  to { transform: scale(1.06); opacity: 0; }
+}
+/* 从上到下扫过一道能量带 */
+.tk-sweep {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: -40%;
+  height: 40%;
+  background: linear-gradient(to bottom, transparent, rgba(77, 225, 255, .35) 78%, var(--vfx-1));
+  animation: tk-sweep .8s cubic-bezier(.3, 0, .7, 1) both;
+}
+@keyframes tk-sweep {
+  from { top: -40%; opacity: .25; }
+  to { top: 110%; opacity: 1; }
+}
+/* 瞬时故障条：横向撕裂几下（老式 CRT / 开机自检的味道） */
+.tk-glitch {
+  position: absolute;
+  left: 0;
+  right: 0;
+  height: 3px;
+  background: var(--vfx-1);
+  mix-blend-mode: screen;
+  animation: tk-glitch .5s steps(2, end) both;
+}
+.tk-glitch.g1 { top: 22%; animation-delay: .05s; }
+.tk-glitch.g2 { top: 55%; background: var(--vfx-2); animation-delay: .12s; }
+.tk-glitch.g3 { top: 78%; animation-delay: .2s; }
+@keyframes tk-glitch {
+  0% { transform: translateX(-6%) scaleY(1); opacity: .9; }
+  40% { transform: translateX(4%) scaleY(2.5); opacity: .6; }
+  70% { transform: translateX(-2%) scaleY(1); opacity: .35; }
+  100% { transform: translateX(0) scaleY(1); opacity: 0; }
+}
 .tk-svg {
   position: absolute;
   inset: 0;
+  z-index: 2;
   width: 100%;
   height: 100%;
   display: block;
@@ -1153,11 +1366,11 @@ function onGlobalKeydown(ev) {
   to { stroke-dashoffset: 0; }
 }
 
-/* 常驻徽标：右上角，尽量不挡内容 */
+/* 常驻徽标：右上角，让开 HUD 的角括号 */
 .tk-badge {
   position: absolute;
-  top: 6px;
-  right: 8px;
+  top: 8px;
+  right: 40px;
   pointer-events: auto;
   display: inline-flex;
   align-items: center;
@@ -1237,11 +1450,18 @@ function onGlobalKeydown(ev) {
   gap: 4px;
 }
 
-/* 尊重"减少动效"：关掉流动与呼吸，但内发光与细边仍保留（照样看得出被接管） */
+/* 尊重"减少动效"：关掉流动、呼吸、扫描与开大动画，
+   但内发光、四角括号与读数仍保留（照样一眼看得出被接管） */
 @media (prefers-reduced-motion: reduce) {
   .tk-svg rect { animation: none; }
   .tk-glow { animation: none; opacity: .85; }
   .tk-pulse { animation: none; }
+  .tk-hud { animation: none; }
+  .tk-corner,
+  .tk-ticks,
+  .tk-scanline,
+  .tk-cursor { animation: none; }
+  .tk-cast { display: none; }
 }
 
 /* 折叠时右侧的竖排展开按钮（多个，像编译器的侧边面板） */

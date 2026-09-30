@@ -182,9 +182,22 @@ func (a *App) TestAIConnection() (AITestResult, error)
 用 SVG `<rect>` 的 `stroke-dasharray` + `stroke-dashoffset` 动画（一条亮段绕矩形周长行进），
 不旋转任何元素，转角与圆角都自然。
 
-- 结构：`.term-body` 内一个 `position: absolute; inset: 0; pointer-events: none` 的覆盖层，内含
-  ① `.tk-glow` 内发光层、② `<svg>` 沿边框跑的光（三条 `rect`：晕 + 主题蓝 + 主题粉）、
-  ③ 右上角小徽标、④（暂停时的）居中提示条
+- 结构：`.term-body` 内一个 `position: absolute; inset: 0; pointer-events: none` 的覆盖层，自下而上：
+  ① `.tk-glow` 呼吸内发光、② `<svg>` 沿边框跑的光、③ `.tk-hud` 常驻科技 HUD、
+  ④ `.tk-cast` 开大动画（只挂 1.6s）、⑤ 右上角徽标、⑥（暂停时的）居中提示条
+- **开大动画（触发瞬间播一次）**：白青径向闪光 → 两枚冲击环（青 + 粉，错开 0.16s）向外扩散消散 →
+  40% 高的能量带从上扫到下 → 3 条横向故障条撕裂几下（`steps(2)` + `mix-blend-mode: screen`）。
+  1.6s 后从 DOM 里摘掉，不留一次性图层白耗合成器
+- **常驻 HUD（"科技感"的来源）**：
+  - 四角 L 形括号（30px、2px 粗、`drop-shadow` 发光）并参与呼吸
+  - 上下边缘的数据刻度（`repeating-linear-gradient` + mask 渐隐）缓慢横向流动
+  - 一条 26px 高的扫描光带每 4.5s 从上扫到下
+  - 角落等宽读数：左上 `AI CONTROL`、右下 `▮ ACTIVE`（暂停时变 `STANDBY`），带闪烁光标
+- **VFX 配色**：这一层刻意用固定霓虹色（`--vfx-1: #4DE1FF` 青 / `--vfx-2: #FF4FB0` 品红），
+  不跟主题走——它表达"AI 正在接管"（应用之外的力量），而且终端底色本身就是深色，
+  霓虹色在三套主题下都够亮；**内发光**则仍然走主题令牌，保持与应用一致
+- 所有动效只用 `opacity` / `transform`（扫描带用 `top`，是绝对定位元素，开销可忽略），
+  且都在覆盖层内：**不影响布局、不需要重新 fit、远端行列数不变**
 - **内发光**：`.tk-glow` 用**四条线性渐变**拼出"周围一圈"（每边一条，宽度可控、转角自然）：
   贴边 12px 是**不透明的主色深色**（`--blue-deep`）渐隐，再往外扩散到 26px 是半透明余晖
   （`--blue-glow-strong`）——所以颜色够深、够明显，压住一点终端文字也没关系（这一圈本身就是信号）
