@@ -45,26 +45,49 @@ const syncMode = ref(false)
 // 所有提示都是覆盖层，不改变页面结构，也不会让终端重新排版。
 const takeover = ref({
   active: false, full: false, paused: false, kind: '', locked: false,
-  sessionId: '', round: 0, maxRounds: 0, message: ''
+  mode: '', sessionId: '', round: 0, maxRounds: 0, message: ''
 })
 const takeoverFull = computed(() => !!takeover.value.full)
+// 「完全接管模式」一旦选中就先套上外框（ARMED）：让用户在还没派任务时就知道
+// 这台终端处于"随时会被接管"的状态；真正开始执行时才升级成 ACTIVE 并加动效。
+const tkArmed = computed(() => takeover.value.mode === 'takeover' && !takeoverFull.value)
+const overlayVisible = computed(() => takeoverFull.value || tkArmed.value)
 // 键盘/粘贴是否被接管收回（暂停等输入时会放行）
 const inputLocked = computed(() => !!takeover.value.locked)
 
-// AI 接管刚触发时播一次"开大"动画（约 1.6s），之后只留常驻 HUD，
-// 避免一堆一次性图层长期挂在那里白耗合成器
+// ---- 开大动画：中央打字机提示 ----
+const CAST_MAIN = 'AI 接管已启动'
+const CAST_SUB = 'CONTROL TRANSFERRED · 终端控制权已移交'
 const castPlaying = ref(false)
-let castTimer = null
+const castMain = ref('')
+const castSub = ref('')
+let castTimers = []
+function clearCastTimers() {
+  castTimers.forEach(t => clearTimeout(t))
+  castTimers = []
+}
+// 节奏（总长约 3.6s，比上一版慢）：闪光 → 冲击环 → 能量带 → 中央打字 → 停留 → 淡出
 function playCast() {
+  clearCastTimers()
   castPlaying.value = true
-  if (castTimer) clearTimeout(castTimer)
-  castTimer = setTimeout(() => { castPlaying.value = false }, 1600)
+  castMain.value = ''
+  castSub.value = ''
+  const mainStart = 520
+  const mainStep = 95
+  ;[...CAST_MAIN].forEach((ch, i) => {
+    castTimers.push(setTimeout(() => { castMain.value += ch }, mainStart + i * mainStep))
+  })
+  const subStart = mainStart + CAST_MAIN.length * mainStep + 220
+  ;[...CAST_SUB].forEach((ch, i) => {
+    castTimers.push(setTimeout(() => { castSub.value += ch }, subStart + i * 26))
+  })
+  castTimers.push(setTimeout(() => { castPlaying.value = false }, 3600))
 }
 
 function onTakeoverUpdate(st) {
   const next = st || {
     active: false, full: false, paused: false, kind: '', locked: false,
-    sessionId: '', round: 0, maxRounds: 0, message: ''
+    mode: '', sessionId: '', round: 0, maxRounds: 0, message: ''
   }
   const wasFull = takeoverFull.value
   takeover.value = next
@@ -78,6 +101,7 @@ function onTakeoverUpdate(st) {
     ElMessage.info('AI 已接管当前终端：需要你输入密码时终端会自动解锁并提示')
   }
   if (!next.full && wasFull) {
+    clearCastTimers()
     castPlaying.value = false
     ElMessage.success('AI 接管已结束，终端已恢复可操作')
   }
@@ -789,7 +813,7 @@ onDeactivated(() => {
 })
 
 onBeforeUnmount(() => {
-  if (castTimer) clearTimeout(castTimer)
+  clearCastTimers()
   unbindGlobalListeners()
   if (pasteInput && pasteInput.parentNode) pasteInput.parentNode.removeChild(pasteInput)
   pasteInput = null
@@ -849,33 +873,37 @@ function onGlobalKeydown(ev) {
       <div class="term-body" :class="{sync: syncMode, takeover: takeoverFull}">
         <!-- AI 接管的视觉提示：纯覆盖层（pointer-events 默认穿透），
              不占布局、不改变终端尺寸，因此不需要重新 fit。 -->
-        <div v-if="takeoverFull" class="tk-overlay">
-          <!-- 内发光层：靠 inset box-shadow 贴边发光（中间不遮内容），opacity 做呼吸。
-               用独立覆盖层而不是直接改 .term-body 的 box-shadow，
-               这样动画只跑 opacity（合成层属性），也不会影响布局。 -->
+        <div v-if="overlayVisible" class="tk-overlay" :class="{armed: tkArmed, active: takeoverFull, paused: takeover.paused}">
+          <!-- 内发光层：靠四条线性渐变贴边发光（中间不遮内容），opacity 做呼吸。
+               armed（已选中完全接管、还没开跑）时只有细细一圈；active 时是完整一圈。 -->
           <div class="tk-glow" />
-          <svg class="tk-svg" aria-hidden="true">
+          <!-- 沿边框跑的光：只在真正执行时出现 -->
+          <svg v-if="takeoverFull" class="tk-svg" aria-hidden="true">
             <rect class="tk-l0" />
             <rect class="tk-l1" />
             <rect class="tk-l2" />
           </svg>
 
-          <!-- 常驻科技 HUD：四角括号 + 边缘数据刻度 + 缓慢扫描线 + 角落读数 -->
+          <!-- 常驻科技 HUD：四角括号 + 角部能量楔 + 边缘数据刻度 + 缓慢扫描线 + 角落读数 -->
           <div class="tk-hud">
             <i class="tk-corner tl" />
             <i class="tk-corner tr" />
             <i class="tk-corner bl" />
             <i class="tk-corner br" />
+            <i class="tk-wedge tl" />
+            <i class="tk-wedge br" />
             <i class="tk-ticks top" />
             <i class="tk-ticks bottom" />
-            <i class="tk-scanline" />
-            <span class="tk-hud-text tl">AI CONTROL</span>
+            <i v-if="takeoverFull" class="tk-scanline" />
+            <span class="tk-hud-text tl">AI&nbsp;CONTROL</span>
             <span class="tk-hud-text br">
-              <i class="tk-cursor" />{{ takeover.paused ? 'STANDBY' : 'ACTIVE' }}
+              <i class="tk-pow" />
+              <b>{{ takeover.paused ? 'STANDBY' : takeoverFull ? 'ACTIVE' : 'ARMED' }}</b>
+              <i class="tk-cursor" />
             </span>
           </div>
 
-          <!-- 开大动画：只在接管刚开始的 1.6 秒内挂载（闪光 + 冲击环 + 扫描 + 瞬时故障条） -->
+          <!-- 开大动画：闪光 + 冲击环 + 能量带 + 故障条 + 中央打字机提示（约 3.6s 后摘除） -->
           <div v-if="castPlaying" class="tk-cast">
             <i class="tk-flash" />
             <i class="tk-ring r1" />
@@ -884,9 +912,14 @@ function onGlobalKeydown(ev) {
             <i class="tk-glitch g1" />
             <i class="tk-glitch g2" />
             <i class="tk-glitch g3" />
+            <div class="tk-announce">
+              <div class="tk-announce-main">{{ castMain }}<i class="tk-announce-caret" /></div>
+              <div class="tk-announce-sub">{{ castSub }}</div>
+              <div class="tk-announce-bar"><i /></div>
+            </div>
           </div>
           <!-- 常驻：右上角小徽标，不挡内容 -->
-          <div class="tk-badge">
+          <div v-if="takeoverFull" class="tk-badge">
             <i class="tk-pulse" />
             <span>{{ takeover.maxRounds > 1 ? 'AI 接管中' : 'AI 正在执行' }}</span>
             <span v-if="takeover.round && takeover.maxRounds > 1" class="tk-round">
@@ -1130,36 +1163,38 @@ function onGlobalKeydown(ev) {
   inset: 0;
   z-index: 6;
   pointer-events: none; /* 默认穿透：终端照常可用（暂停时键盘是放行的） */
-  /* VFX 霓虹色：这一层刻意用固定霓虹色（不跟主题走）——它表达的是"AI 正在接管"，
-     而不是应用 UI 的一部分；终端底色本身是深色，霓虹色在三套主题下都够亮。 */
-  --vfx-1: #4DE1FF;
-  --vfx-2: #FF4FB0;
 }
-/* 内发光 + 呼吸：只做"周围一圈"，范围精确控制在 12~26px。
-   用四条线性渐变拼出来（每边一条），所以宽度可控、转角自然；
-   贴近边缘的一档直接用**不透明的主色深色**（--blue-deep）渐隐，
-   所以颜色够深、够明显，压在文字上也没关系（这一圈本来就是"被接管"的信号）。
-   颜色全部走主题令牌，浅色 / 深色 / 赛博三套各自成立。 */
+/* 内发光 + 呼吸：只做"周围一圈"，宽度用 --tk-ring-w / --tk-halo-w 控制。
+   armed（已选中完全接管、还没开跑）：细圈 + 慢呼吸，安静地提示"随时会被接管"；
+   active（AI 正在操控）：整圈加强。四条线性渐变拼出每边一条，宽度可控、转角自然。
+   贴边那一档用**不透明霓虹色**（--tk-glow-edge）渐隐，所以颜色够深、够明显。 */
 .tk-glow {
   position: absolute;
   inset: 0;
+  z-index: 1;
   pointer-events: none;
+  --tk-ring-w: 14px;
+  --tk-halo-w: 30px;
   background:
-    /* 贴边 12px：不透明的深色主色，渐隐 */
-    linear-gradient(to bottom, var(--blue-deep), transparent 12px) top left / 100% 12px no-repeat,
-    linear-gradient(to top, var(--blue-deep), transparent 12px) bottom left / 100% 12px no-repeat,
-    linear-gradient(to right, var(--blue-deep), transparent 12px) top left / 12px 100% no-repeat,
-    linear-gradient(to left, var(--blue-deep), transparent 12px) top right / 12px 100% no-repeat,
-    /* 再往外扩散到 26px：半透明主色余晖 */
-    linear-gradient(to bottom, var(--blue-glow-strong), transparent 26px) top left / 100% 26px no-repeat,
-    linear-gradient(to top, var(--blue-glow-strong), transparent 26px) bottom left / 100% 26px no-repeat,
-    linear-gradient(to right, var(--blue-glow-strong), transparent 26px) top left / 26px 100% no-repeat,
-    linear-gradient(to left, var(--blue-glow-strong), transparent 26px) top right / 26px 100% no-repeat;
-  animation: tk-breathe 2.2s ease-in-out infinite;
+    linear-gradient(to bottom, var(--tk-glow-edge), transparent var(--tk-ring-w)) top left / 100% var(--tk-ring-w) no-repeat,
+    linear-gradient(to top, var(--tk-glow-edge), transparent var(--tk-ring-w)) bottom left / 100% var(--tk-ring-w) no-repeat,
+    linear-gradient(to right, var(--tk-glow-edge), transparent var(--tk-ring-w)) top left / var(--tk-ring-w) 100% no-repeat,
+    linear-gradient(to left, var(--tk-glow-edge), transparent var(--tk-ring-w)) top right / var(--tk-ring-w) 100% no-repeat,
+    linear-gradient(to bottom, var(--tk-glow-halo), transparent var(--tk-halo-w)) top left / 100% var(--tk-halo-w) no-repeat,
+    linear-gradient(to top, var(--tk-glow-halo), transparent var(--tk-halo-w)) bottom left / 100% var(--tk-halo-w) no-repeat,
+    linear-gradient(to right, var(--tk-glow-halo), transparent var(--tk-halo-w)) top left / var(--tk-halo-w) 100% no-repeat,
+    linear-gradient(to left, var(--tk-glow-halo), transparent var(--tk-halo-w)) top right / var(--tk-halo-w) 100% no-repeat;
+  animation: tk-breathe var(--tk-breathe, 2.2s) ease-in-out infinite;
 }
-/* 呼吸幅度拉大（0.28 ⇄ 1），让人一眼看出"这台终端正在被 AI 控制" */
+/* armed：只有细细一圈，呼吸也放缓 */
+.tk-overlay.armed .tk-glow {
+  --tk-ring-w: 5px;
+  --tk-halo-w: 12px;
+  animation-duration: calc(var(--tk-breathe, 2.2s) * 1.6);
+}
+/* 呼吸幅度由各主题的 --tk-low 决定（浅色主题压得更低 → 闪得更明显） */
 @keyframes tk-breathe {
-  0%, 100% { opacity: .28; }
+  0%, 100% { opacity: var(--tk-low, .22); }
   50% { opacity: 1; }
 }
 
@@ -1175,31 +1210,80 @@ function onGlobalKeydown(ev) {
   from { opacity: 0; }
   to { opacity: 1; }
 }
-/* 四角 L 形括号：整个 HUD 的"骨架"，带霓虹外发光并参与呼吸 */
+/* 四角 L 形括号：整个 HUD 的"骨架"，做得夸张一点（56px、3px 粗）
+   —— 外圈粗线 + 内圈细线 + 角上菱形，三层叠出机械感 */
 .tk-corner {
   position: absolute;
-  width: 30px;
-  height: 30px;
-  border: 0 solid var(--vfx-1);
-  filter: drop-shadow(0 0 6px rgba(77, 225, 255, .75));
-  animation: tk-hud-breathe 2.2s ease-in-out infinite;
+  width: 56px;
+  height: 56px;
+  border: 0 solid var(--tk-a1);
+  filter: drop-shadow(0 0 10px var(--tk-glow-halo));
+  animation: tk-hud-breathe var(--tk-breathe, 2.2s) ease-in-out infinite;
 }
-.tk-corner.tl { top: 6px; left: 6px; border-top-width: 2px; border-left-width: 2px; }
-.tk-corner.tr { top: 6px; right: 6px; border-top-width: 2px; border-right-width: 2px; }
-.tk-corner.bl { bottom: 6px; left: 6px; border-bottom-width: 2px; border-left-width: 2px; }
-.tk-corner.br { bottom: 6px; right: 6px; border-bottom-width: 2px; border-right-width: 2px; }
+.tk-corner::before {
+  content: '';
+  position: absolute;
+  width: 26px;
+  height: 26px;
+  border: 0 solid var(--tk-a2);
+  opacity: .9;
+}
+.tk-corner::after {
+  content: '';
+  position: absolute;
+  width: 8px;
+  height: 8px;
+  background: var(--tk-a1);
+  box-shadow: 0 0 12px var(--tk-a1);
+  transform: rotate(45deg);
+}
+.tk-corner.tl { top: 10px; left: 10px; border-top-width: 3px; border-left-width: 3px; }
+.tk-corner.tl::before { top: 9px; left: 9px; border-top-width: 1px; border-left-width: 1px; }
+.tk-corner.tl::after { top: -4px; left: -4px; }
+.tk-corner.tr { top: 10px; right: 10px; border-top-width: 3px; border-right-width: 3px; }
+.tk-corner.tr::before { top: 9px; right: 9px; border-top-width: 1px; border-right-width: 1px; }
+.tk-corner.tr::after { top: -4px; right: -4px; }
+.tk-corner.bl { bottom: 10px; left: 10px; border-bottom-width: 3px; border-left-width: 3px; }
+.tk-corner.bl::before { bottom: 9px; left: 9px; border-bottom-width: 1px; border-left-width: 1px; }
+.tk-corner.bl::after { bottom: -4px; left: -4px; }
+.tk-corner.br { bottom: 10px; right: 10px; border-bottom-width: 3px; border-right-width: 3px; }
+.tk-corner.br::before { bottom: 9px; right: 9px; border-bottom-width: 1px; border-right-width: 1px; }
+.tk-corner.br::after { bottom: -4px; right: -4px; }
 @keyframes tk-hud-breathe {
-  0%, 100% { opacity: .5; }
+  0%, 100% { opacity: var(--tk-hud-low, .5); }
   50% { opacity: 1; }
 }
+/* 对角能量楔：左上 / 右下各一片，把"被包围"的感觉做大 */
+.tk-wedge {
+  position: absolute;
+  width: 170px;
+  height: 170px;
+  pointer-events: none;
+  opacity: .5;
+  animation: tk-hud-breathe var(--tk-breathe, 2.2s) ease-in-out infinite;
+}
+.tk-wedge.tl {
+  top: 0;
+  left: 0;
+  background: linear-gradient(135deg, var(--tk-glow-halo), transparent 66%);
+  clip-path: polygon(0 0, 100% 0, 0 100%);
+}
+.tk-wedge.br {
+  bottom: 0;
+  right: 0;
+  background: linear-gradient(315deg, var(--tk-glow-halo), transparent 66%);
+  clip-path: polygon(100% 100%, 100% 0, 0 100%);
+}
+/* armed 状态安静一些：不要扫描线、不要能量楔、不要跑动的光 */
+.tk-overlay.armed .tk-wedge { display: none; }
 /* 上/下边缘的数据刻度，缓慢横向流动 */
 .tk-ticks {
   position: absolute;
   left: 0;
   right: 0;
-  height: 6px;
-  opacity: .45;
-  background-image: repeating-linear-gradient(90deg, var(--vfx-1) 0 2px, transparent 2px 14px);
+  height: 7px;
+  opacity: .5;
+  background-image: repeating-linear-gradient(90deg, var(--tk-a1) 0 2px, transparent 2px 14px);
   animation: tk-ticks-run 6s linear infinite;
 }
 .tk-ticks.top {
@@ -1221,82 +1305,97 @@ function onGlobalKeydown(ev) {
   left: 0;
   right: 0;
   top: -30px;
-  height: 26px;
-  border-bottom: 1px solid var(--vfx-1);
-  background: linear-gradient(to bottom, transparent, rgba(77, 225, 255, .18) 70%, rgba(77, 225, 255, .5));
+  height: 30px;
+  border-bottom: 2px solid var(--tk-a1);
+  background: linear-gradient(to bottom, transparent, var(--tk-glow-halo) 70%, var(--tk-a1));
   animation: tk-scan 4.5s cubic-bezier(.45, 0, .55, 1) infinite;
 }
 @keyframes tk-scan {
   0% { top: -30px; opacity: 0; }
-  12% { opacity: .85; }
-  88% { opacity: .85; }
+  12% { opacity: .9; }
+  88% { opacity: .9; }
   100% { top: 100%; opacity: 0; }
 }
-/* 角落读数：等宽小字 + 闪烁光标 */
+/* 角落读数：放大加粗，做得像仪表面板上的状态字 */
 .tk-hud-text {
   position: absolute;
   display: inline-flex;
   align-items: center;
-  gap: 4px;
+  gap: 6px;
   font-family: ui-monospace, Consolas, monospace;
-  font-size: 9.5px;
-  letter-spacing: 2px;
-  color: var(--vfx-1);
-  opacity: .72;
-  text-shadow: 0 0 6px rgba(77, 225, 255, .65);
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 3.5px;
+  color: var(--tk-a1);
+  opacity: .92;
+  text-shadow: 0 0 10px var(--tk-glow-halo), 0 0 26px var(--tk-glow-halo);
   white-space: nowrap;
 }
-.tk-hud-text.tl { left: 42px; top: 9px; }
-.tk-hud-text.br { right: 42px; bottom: 9px; }
+.tk-hud-text b {
+  font-weight: 800;
+  color: #fff;
+  text-shadow: 0 0 10px var(--tk-a1), 0 0 30px var(--tk-glow-halo);
+}
+.tk-hud-text.tl { left: 78px; top: 22px; }
+.tk-hud-text.br { right: 78px; bottom: 22px; }
+/* 电量条：三格小刻度，呼吸式闪烁 */
+.tk-pow {
+  width: 18px;
+  height: 12px;
+  background-image: repeating-linear-gradient(90deg, var(--tk-a2) 0 4px, transparent 4px 7px);
+  animation: tk-hud-breathe 1.1s ease-in-out infinite;
+}
 .tk-cursor {
-  width: 5px;
-  height: 9px;
-  background: var(--vfx-2);
-  box-shadow: 0 0 6px var(--vfx-2);
-  animation: tk-blink 1s steps(1, end) infinite;
+  width: 7px;
+  height: 13px;
+  background: var(--tk-a2);
+  box-shadow: 0 0 10px var(--tk-a2);
+  animation: tk-blink .9s steps(1, end) infinite;
 }
 @keyframes tk-blink {
   50% { opacity: 0; }
 }
 
-/* ---- 开大动画：接管触发瞬间播一次（约 1.6s） ---- */
+/* ---- 开大动画：接管触发瞬间播一次（约 3.6s，比上一版慢，让人看清） ---- */
 .tk-cast {
   position: absolute;
   inset: 0;
   z-index: 4;
   pointer-events: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
-/* 白青闪光 */
+/* 白青径向闪光 */
 .tk-flash {
   position: absolute;
   inset: 0;
   background: radial-gradient(circle at 50% 50%,
-    rgba(255, 255, 255, .92),
-    rgba(77, 225, 255, .45) 42%,
-    transparent 74%);
-  animation: tk-flash .45s ease-out both;
+    rgba(255, 255, 255, .95),
+    var(--tk-glow-halo) 40%,
+    transparent 76%);
+  animation: tk-flash .6s ease-out both;
 }
 @keyframes tk-flash {
   from { opacity: 1; }
   to { opacity: 0; }
 }
-/* 冲击环：从略小扩到略大并消散，两枚错开（青 + 粉） */
+/* 冲击环：从略小扩到略大并消散，两枚错开（主色 + 副色） */
 .tk-ring {
   position: absolute;
   inset: 0;
-  border: 2px solid var(--vfx-1);
-  border-radius: 12px;
-  box-shadow: 0 0 26px rgba(77, 225, 255, .6), inset 0 0 26px rgba(77, 225, 255, .45);
-  animation: tk-ring-out .9s cubic-bezier(.2, .7, .2, 1) both;
+  border: 3px solid var(--tk-a1);
+  border-radius: 14px;
+  box-shadow: 0 0 40px var(--tk-glow-halo), inset 0 0 40px var(--tk-glow-halo);
+  animation: tk-ring-out 1.6s cubic-bezier(.18, .72, .22, 1) both;
 }
 .tk-ring.r2 {
-  border-color: var(--vfx-2);
-  box-shadow: 0 0 26px rgba(255, 79, 176, .55), inset 0 0 26px rgba(255, 79, 176, .4);
-  animation-delay: .16s;
+  border-color: var(--tk-a2);
+  animation-delay: .3s;
 }
 @keyframes tk-ring-out {
-  from { transform: scale(.86); opacity: 1; }
-  to { transform: scale(1.06); opacity: 0; }
+  from { transform: scale(.84); opacity: 1; }
+  to { transform: scale(1.08); opacity: 0; }
 }
 /* 从上到下扫过一道能量带 */
 .tk-sweep {
@@ -1305,11 +1404,11 @@ function onGlobalKeydown(ev) {
   right: 0;
   top: -40%;
   height: 40%;
-  background: linear-gradient(to bottom, transparent, rgba(77, 225, 255, .35) 78%, var(--vfx-1));
-  animation: tk-sweep .8s cubic-bezier(.3, 0, .7, 1) both;
+  background: linear-gradient(to bottom, transparent, var(--tk-glow-halo) 76%, var(--tk-a1));
+  animation: tk-sweep 1.5s cubic-bezier(.3, 0, .7, 1) both;
 }
 @keyframes tk-sweep {
-  from { top: -40%; opacity: .25; }
+  from { top: -40%; opacity: .3; }
   to { top: 110%; opacity: 1; }
 }
 /* 瞬时故障条：横向撕裂几下（老式 CRT / 开机自检的味道） */
@@ -1318,16 +1417,16 @@ function onGlobalKeydown(ev) {
   left: 0;
   right: 0;
   height: 3px;
-  background: var(--vfx-1);
+  background: var(--tk-a1);
   mix-blend-mode: screen;
-  animation: tk-glitch .5s steps(2, end) both;
+  animation: tk-glitch .7s steps(2, end) both;
 }
-.tk-glitch.g1 { top: 22%; animation-delay: .05s; }
-.tk-glitch.g2 { top: 55%; background: var(--vfx-2); animation-delay: .12s; }
-.tk-glitch.g3 { top: 78%; animation-delay: .2s; }
+.tk-glitch.g1 { top: 22%; animation-delay: .35s; }
+.tk-glitch.g2 { top: 55%; background: var(--tk-a2); animation-delay: .5s; }
+.tk-glitch.g3 { top: 78%; animation-delay: .65s; }
 @keyframes tk-glitch {
   0% { transform: translateX(-6%) scaleY(1); opacity: .9; }
-  40% { transform: translateX(4%) scaleY(2.5); opacity: .6; }
+  40% { transform: translateX(5%) scaleY(2.6); opacity: .65; }
   70% { transform: translateX(-2%) scaleY(1); opacity: .35; }
   100% { transform: translateX(0) scaleY(1); opacity: 0; }
 }
@@ -1354,16 +1453,88 @@ function onGlobalKeydown(ev) {
 }
 .tk-l0 {
   /* 边框晕：比亮段更宽更淡，让"跑动的光"有发光感 */
-  stroke: var(--blue);
-  stroke-width: 8;
-  opacity: .22;
-  animation: tk-run 3.6s linear infinite, tk-breathe 2.2s ease-in-out infinite;
+  stroke: var(--tk-a1);
+  stroke-width: 9;
+  opacity: .28;
+  animation: tk-run 3.6s linear infinite, tk-breathe var(--tk-breathe, 2.2s) ease-in-out infinite;
 }
-.tk-l1 { stroke: var(--blue); }
-.tk-l2 { stroke: var(--pink); animation-delay: -1.8s; }
+.tk-l1 { stroke: var(--tk-a1); }
+.tk-l2 { stroke: var(--tk-a2); animation-delay: -1.8s; }
+.tk-svg rect {
+  filter: drop-shadow(0 0 6px var(--tk-glow-halo));
+}
 @keyframes tk-run {
   from { stroke-dashoffset: 2140; }
   to { stroke-dashoffset: 0; }
+}
+
+/* ---- 中央提示：打字机 + 副标题 + 扫描条 ---- */
+.tk-announce {
+  position: relative;
+  padding: 22px 34px 16px;
+  border-radius: 16px;
+  text-align: center;
+  max-width: min(760px, 86%);
+  background: radial-gradient(ellipse at center,
+    rgba(4, 8, 16, .9),
+    rgba(4, 8, 16, .55) 72%,
+    transparent);
+  -webkit-backdrop-filter: blur(2px);
+  backdrop-filter: blur(2px);
+  animation: tk-announce 3.6s ease-out both;
+}
+@keyframes tk-announce {
+  0% { opacity: 0; transform: translateY(10px) scale(.95); }
+  9% { opacity: 1; transform: translateY(0) scale(1); }
+  76% { opacity: 1; transform: translateY(0) scale(1); }
+  100% { opacity: 0; transform: translateY(-8px) scale(1.02); }
+}
+.tk-announce-main {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: clamp(20px, 2.6vw, 34px);
+  font-weight: 800;
+  letter-spacing: 6px;
+  color: #fff;
+  min-height: 1.3em;
+  text-shadow: 0 0 12px var(--tk-a1), 0 0 34px var(--tk-glow-halo), 0 0 70px var(--tk-glow-halo);
+}
+.tk-announce-caret {
+  display: inline-block;
+  width: .46em;
+  height: 1em;
+  margin-left: 8px;
+  background: var(--tk-a1);
+  box-shadow: 0 0 14px var(--tk-a1);
+  animation: tk-blink .7s steps(1, end) infinite;
+}
+.tk-announce-sub {
+  margin-top: 10px;
+  min-height: 1.3em;
+  font-family: ui-monospace, Consolas, monospace;
+  font-size: clamp(10px, 1.05vw, 14px);
+  letter-spacing: 3.5px;
+  color: var(--tk-a2);
+  text-shadow: 0 0 12px var(--tk-a2);
+}
+.tk-announce-bar {
+  position: relative;
+  height: 2px;
+  width: min(440px, 72%);
+  margin: 16px auto 0;
+  overflow: hidden;
+  background: rgba(255, 255, 255, .14);
+}
+.tk-announce-bar i {
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(90deg, transparent, var(--tk-a1), var(--tk-a2), transparent);
+  animation: tk-bar-sweep 1.3s cubic-bezier(.4, 0, .6, 1) infinite;
+}
+@keyframes tk-bar-sweep {
+  from { transform: translateX(-100%); }
+  to { transform: translateX(100%); }
 }
 
 /* 常驻徽标：右上角，让开 HUD 的角括号 */

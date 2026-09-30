@@ -911,6 +911,67 @@ html, body, #app {
   -webkit-backdrop-filter: blur(10px);
 }
 
+/* ---------- AI 接管 VFX 配色（三套主题各自调） ----------
+   这一层刻意用霓虹色、不走应用主色：它表达的是"AI 正在接管"（应用之外的力量）；
+   而被接管的终端底色始终是深色，霓虹色在三套主题下都够亮。
+   --tk-a1 主色（角标 / 刻度 / 扫描 / 边框光）
+   --tk-a2 副色（点缀 / 内圈 / 光标）
+   --tk-glow-edge 贴边那一档（不透明，决定"深不深"）
+   --tk-glow-halo 外层余晖
+   --tk-breathe 呼吸周期；--tk-low / --tk-hud-low 呼吸最低不透明度（越小闪得越明显） */
+:root,
+:root[data-theme='light'] {
+  /* 浅色模式：整体底色偏亮，这里把发光提亮、呼吸压得更低，避免"看着发白、闪得不明显" */
+  --tk-a1: #1ED0FF;
+  --tk-a2: #7C5CFF;
+  --tk-glow-edge: #12C4FF;
+  --tk-glow-halo: rgba(30, 208, 255, .58);
+  --tk-breathe: 1.7s;
+  --tk-low: .10;
+  --tk-hud-low: .34;
+}
+:root[data-theme='dark'] {
+  --tk-a1: #4DE1FF;
+  --tk-a2: #FF4FB0;
+  --tk-glow-edge: #2FB6E6;
+  --tk-glow-halo: rgba(77, 225, 255, .45);
+  --tk-breathe: 2.2s;
+  --tk-low: .20;
+  --tk-hud-low: .50;
+}
+:root[data-theme='cyber'] {
+  /* 赛博朋克：品红贴边 + 青色余晖，再叠一层色相漂移 */
+  --tk-a1: #21E6FF;
+  --tk-a2: #FF3EA5;
+  --tk-glow-edge: #FF3EA5;
+  --tk-glow-halo: rgba(33, 230, 255, .60);
+  --tk-breathe: 2.6s;
+  --tk-low: .14;
+  --tk-hud-low: .42;
+}
+/* 赛博朋克专属：HUD 缓慢色相漂移（青 → 紫 → 品红 → 青），霓虹感拉满 */
+:root[data-theme='cyber'] .tk-hud {
+  animation: tk-neon-drift 9s linear infinite;
+}
+@keyframes tk-neon-drift {
+  to { filter: hue-rotate(360deg); }
+}
+/* 赛博朋克专属：接管中给终端再叠一层极淡的网格，与页面本身的网格呼应 */
+:root[data-theme='cyber'] .tk-overlay.active::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  opacity: .18;
+  background-image:
+    repeating-linear-gradient(0deg, rgba(33, 230, 255, .35) 0 1px, transparent 1px 44px),
+    repeating-linear-gradient(90deg, rgba(255, 62, 165, .22) 0 1px, transparent 1px 44px);
+  animation: tk-grid-drift 12s linear infinite;
+}
+@keyframes tk-grid-drift {
+  to { background-position: 0 44px, 44px 0; }
+}
+
 /* ---------- 动效降级（系统偏好） ---------- */
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after {

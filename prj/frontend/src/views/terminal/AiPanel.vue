@@ -176,6 +176,8 @@ function emitTakeover() {
     paused: !!(st && st.state === 'paused'),
     kind: (st && st.kind) || '',
     locked: locked.value,
+    // 把当前模式也带上去：终端页据此在"已选中完全接管但还没开跑"时就套上 ARMED 外框
+    mode: mode.value,
     sessionId: c.sessionId,
     round: st ? st.round : 0,
     maxRounds: st ? st.maxRounds : 0,
@@ -219,7 +221,8 @@ async function setMode(v) {
   }
   mode.value = v
   localStorage.setItem(MODE_KEY, v)
-  if (v === 'takeover') push({kind: 'note', state: 'paused', text: '已切换到完全接管模式：AI 将连续自动执行命令，可随时点「停止」'})
+  emitTakeover()
+  if (v === 'takeover') push({kind: 'note', state: 'paused', text: '已切换到完全接管模式：终端已进入待命状态，AI 将连续自动执行命令，可随时点「停止」'})
 }
 function setCtx(v) {
   ctxMode.value = v
