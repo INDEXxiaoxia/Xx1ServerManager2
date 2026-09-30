@@ -52,6 +52,8 @@ const (
 	aiContextMaxBytes = 32 * 1024
 	// 对话历史里保留几轮的终端原文（更早的只留一行摘要，防止上下文越滚越大）
 	aiHistoryKeepRaw = 2
+	// 建议 / 直接执行模式保留的对话消息条数（一问一答算两条）
+	aiSuggestHistoryMax = 16
 )
 
 // ---- 配置读写 ----
@@ -300,7 +302,11 @@ func aiTakeoverSystemPrompt(serverName, host string) string {
 
 // ---- 建议 / 直接执行模式 ----
 
-// AIChat 建议 / 直接执行模式的一次问答
+// AIChat 建议 / 直接执行模式的一次问答。
+//
+// 会话默认带上下文：同一个 sessionId 的对话历史会被带进下一次请求
+// （终端内容**不进历史**——每次都用最新的，避免上下文被旧屏幕内容撑爆）。
+// 「重置对话」会丢掉会话，随后就是全新的一段。
 func (a *App) AIChat(req models.AIRequest) (models.AIResponse, error) {
 	resp := models.AIResponse{SessionID: req.SessionID}
 	start := time.Now()
@@ -324,23 +330,42 @@ func (a *App) AIChat(req models.AIRequest) (models.AIResponse, error) {
 	ctx := a.buildContext(ts, req.Context, req.Lines, req.Selection)
 	resp.Context = ctx
 
+	mode := req.Mode
+	if mode != "exec" {
+		mode = "suggest"
+	}
+	s := a.ensureAISession(req.SessionID, req.TermID, sv.ID, sv.Name, mode, 1, "")
+	s.mu.Lock()
+	s.mode = mode
+	hist := make([]aiclient.Message, len(s.history))
+	copy(hist, s.history)
+	s.mu.Unlock()
+	resp.SessionID = s.id
+
 	userContent := "【我的问题】\n" + strings.TrimSpace(req.Text)
 	if ctx.Text != "" {
-		userContent += "\n\n【终端当前内容（已清理控制字符，可能被截断）】\n" + ctx.Text
+		userContent += "\n\n【终端输出】\n" + ctx.Text
 	} else {
-		userContent += "\n\n【终端当前内容】\n（为空）"
+		userContent += "\n\n【终端输出】\n（为空）"
 	}
 
-	reply, err := client.Chat([]aiclient.Message{
-		{Role: "system", Content: aiSuggestSystemPrompt(sv.Name, sv.Host)},
-		{Role: "user", Content: userContent},
-	})
+	msgs := make([]aiclient.Message, 0, len(hist)+2)
+	msgs = append(msgs, aiclient.Message{Role: "system", Content: aiSuggestSystemPrompt(sv.Name, sv.Host)})
+	msgs = append(msgs, hist...)
+	msgs = append(msgs, aiclient.Message{Role: "user", Content: userContent})
+
+	reply, err := client.Chat(msgs)
 	resp.Model = reply.Model
 	resp.Truncated = reply.Truncated
 	resp.ElapsedMs = time.Since(start).Milliseconds()
 	if err != nil {
 		return resp, err
 	}
+
+	// 只把"问题与回答"记进历史（终端屏幕内容每次重新取，不进历史）
+	s.pushHistory(aiclient.Message{Role: "user", Content: "【我的问题】\n" + strings.TrimSpace(req.Text)})
+	s.pushHistory(aiclient.Message{Role: "assistant", Content: reply.Text})
+	s.trimHistory(aiSuggestHistoryMax)
 
 	text, cmds := parseAISuggestReply(reply.Text)
 	resp.Text = text
@@ -359,6 +384,7 @@ func (a *App) AIChat(req models.AIRequest) (models.AIResponse, error) {
 
 // AIExecOne 直接执行模式：把一条命令注入当前可见终端，回读结果后停下。
 // 也用于建议模式下用户点「执行这条」。
+// 执行结果会记进会话历史，所以下一条消息里 AI 知道"刚才那条命令跑出了什么"。
 func (a *App) AIExecOne(termID, sessionID, command string) (models.AIExecResult, error) {
 	ts := a.getTerminal(termID)
 	if ts == nil {
@@ -367,20 +393,27 @@ func (a *App) AIExecOne(termID, sessionID, command string) (models.AIExecResult,
 	if strings.TrimSpace(command) == "" {
 		return models.AIExecResult{}, errors.New("命令为空")
 	}
-	// 单条执行也登记成一个会话：这样"停止 / 继续等待 / Ctrl+C"同样可用
-	existed := a.existingAISession(sessionID) != nil
+	// 单条执行也登记成一个会话：这样"停止 / 继续等待 / Ctrl+C"同样可用。
+	// 会话留着不删——它的 sid 与前端那段对话绑定，执行结果要进历史供下一轮参考；
+	// 清理由「重置对话」(AIReset)、关闭终端、以及开新对话时的空闲会话回收负责。
 	s := a.ensureAISession(sessionID, termID, "", "", "exec", 1, "")
 	s.mu.Lock()
 	s.cancelled = false
 	s.paused = false
 	s.control = make(chan string, 8)
-	s.mu.Unlock()
-	if !existed {
-		// 只为这一次执行创建的会话：跑完就撤掉，避免堆内存。
-		// 已有会话（例如刚跑完接管的那段对话）不动，否则会把它一起清掉。
-		defer a.dropAISession(s.id)
+	if s.mode == "" {
+		s.mode = "exec"
 	}
-	return a.aiExecStep(s, command), nil
+	s.mu.Unlock()
+	res := a.aiExecStep(s, command)
+	// 把结果喂回上下文：退出码 + 输出（输出按大块折叠，只保留最近两轮原文）
+	s.pushHistory(aiclient.Message{
+		Role: "user",
+		Content: fmt.Sprintf("【终端输出】\n我执行了：%s\n退出码：%d，状态：%s\n%s",
+			command, res.ExitCode, res.Status, res.Output),
+	})
+	s.compressHistory()
+	return res, nil
 }
 
 // ---- 接管模式 ----
@@ -409,8 +442,9 @@ func (a *App) AIStartTakeover(req models.AIRequest) (string, error) {
 	}
 	maxRounds = clampInt(maxRounds, 1, 100, aiDefaultMaxRounds)
 
-	// 同一个 sessionID 会命中已有会话（同一段对话里继续提问）。此时必须把状态复位：
+	// 同一个 sessionID 会命中已有会话（同一段对话里继续提问/追加任务）。此时必须把状态复位：
 	// 上一次 stop() 留下的 cancelled=true 不清掉的话，新的循环会刚起步就退出。
+	// round 归零 = 重新拿到 maxRounds 轮预算（"已达上限"之后追加任务可以接着跑）。
 	s := a.ensureAISession(req.SessionID, req.TermID, sv.ID, sv.Name, "takeover", maxRounds, "")
 	s.mu.Lock()
 	s.mode = "takeover"
@@ -423,15 +457,35 @@ func (a *App) AIStartTakeover(req models.AIRequest) (string, error) {
 	s.state = "running"
 	s.mu.Unlock()
 	if !req.ContinueSession {
-		// 新任务但沿用同一段对话：清掉轮次计数，保留历史（用户可以在同一段对话里连续提要求）
-		s.mu.Lock()
-		s.round = 0
-		s.mu.Unlock()
+		// 这是一段新对话（不是追加）：同一终端上已经停下、没人再听的旧会话顺手清掉，
+		// 免得反复"发送"把旧上下文一直堆在内存里
+		a.dropIdleSessionsForTerm(req.TermID, s.id)
 	}
 	s.appendUserTask(req.Text)
 
 	go a.runTakeover(s)
 	return s.id, nil
+}
+
+// dropIdleSessionsForTerm 清掉某终端上"已经停下"的会话（正在跑的留着）
+func (a *App) dropIdleSessionsForTerm(termID, keepID string) {
+	a.aiMu.Lock()
+	hit := make([]*aiSession, 0, 2)
+	for id, s := range a.aiSessions {
+		if id == keepID || s.termID != termID {
+			continue
+		}
+		s.mu.Lock()
+		idle := s.state != "running"
+		s.mu.Unlock()
+		if idle {
+			hit = append(hit, s)
+		}
+	}
+	a.aiMu.Unlock()
+	for _, s := range hit {
+		a.dropAISession(s.id)
+	}
 }
 
 // AIStopTakeover 停止接管（正在等待的那一步会立刻收尾）
@@ -579,6 +633,20 @@ func (s *aiSession) pushHistory(m aiclient.Message) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.history = append(s.history, m)
+}
+
+// trimHistory 只保留最近 n 条消息（建议/直接执行模式的问答历史无限增长没有意义）。
+// 裁完如果开头是 assistant，再丢一条——避免历史以"回答"开头让模型错位。
+func (s *aiSession) trimHistory(n int) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if n <= 0 || len(s.history) <= n {
+		return
+	}
+	s.history = append([]aiclient.Message{}, s.history[len(s.history)-n:]...)
+	if len(s.history) > 0 && s.history[0].Role == "assistant" {
+		s.history = s.history[1:]
+	}
 }
 
 // compressHistory 只保留最近 aiHistoryKeepRaw 轮的终端原文，其余换成一行摘要。

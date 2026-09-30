@@ -5,13 +5,15 @@ import {api, events} from '@/api'
 import {writeClipboard} from '@/utils/clipboard'
 import {renderMarkdown} from '@/utils/markdown-lite'
 
-// 终端 AI 对话面板
+// 终端 AI 面板（交互参照 ChatGPT / Gemini / DSH 这类 agent 工具）
 //
-// 三个模式：建议（只给命令）/ 直接执行（跑一条就停）/ 完全接管（连续多轮）
-// 命令注入到**用户看得见的那个终端**里执行。
+// 交互约定：
+//   · 会话默认带上下文——直接点「发送」就是在继续对话；只有「重置对话」才会开新会话
+//   · 模式（建议 / 直接执行 / 完全接管）在输入框下方切换，切到危险模式当场弹确认
+//   · 输入框上方的功能行只放低频工具：上下文档位、预览上下文、重置对话
+//   · 每条命令的 复制 / 插入 / 执行 挤在一行里，不换行
 //
-// 对话按终端隔离：每个终端标签各有一份对话记录与自己的后端会话（chats[终端key]），
-// 切到另一个终端就是一段新对话，切回来原来的记录还在。
+// 每个终端标签各有一份对话记录与自己的后端会话（chats[终端key]）。
 
 const props = defineProps({
   activeTerminal: {type: Object, default: null},
@@ -35,6 +37,7 @@ const aiHint = ref('')
 const previewVisible = ref(false)
 const previewText = ref('')
 const logRef = ref(null)
+const taRef = ref(null)
 
 const MODE_LABEL = {suggest: '建议', exec: '直接执行', takeover: '完全接管'}
 const MODE_TIP = {
@@ -47,7 +50,6 @@ const STATE_LABEL = {
   done: '已完成', error: '出错', maxrounds: '已达上限'
 }
 const riskLabel = {low: '低风险', medium: '改系统状态', high: '破坏性操作'}
-const riskType = {low: 'success', medium: 'warning', high: 'danger'}
 
 // ---- 按终端隔离的对话 ----
 const chats = reactive({})
@@ -63,12 +65,18 @@ function chatOf(k) {
 const chat = computed(() => chatOf(termKey.value))
 const termId = computed(() => (props.activeTerminal && props.activeTerminal.termId) || '')
 const canUse = computed(() => !!termId.value)
-// 接管中且不在"等你输入"状态时，才收回终端的键盘。
-// 建议模式下 AI 并不碰终端，所以不算锁定（否则用户干等模型回复时连终端都不能用）。
+// 接管中且不在"等你输入"状态时，才收回终端的键盘
 const locked = computed(() => {
   const st = chat.value.takeoverState
   if (!chat.value.takeoverFull) return false
   return !(st && st.state === 'paused' && (st.kind === 'input' || st.kind === 'altscreen'))
+})
+const takeoverActive = computed(() => !!(chat.value.takeoverFull && chat.value.takeoverState))
+const canSend = computed(() => canUse.value && aiReady.value && !props.sync && !chat.value.takeoverFull && !!input.value.trim())
+const ctxSizeText = computed(() => {
+  const c = chat.value.lastContext
+  if (!c) return ''
+  return `${c.lines} 行 / ${(c.bytes / 1024).toFixed(1)} KB`
 })
 
 // ---- 消息与滚动 ----
@@ -82,6 +90,15 @@ function push(item) {
   chat.value.messages.push(item)
   scrollToBottom()
 }
+
+// 输入框随内容增高（最多 ~6 行）
+function autoGrow() {
+  const el = taRef.value
+  if (!el) return
+  el.style.height = 'auto'
+  el.style.height = Math.min(el.scrollHeight, 132) + 'px'
+}
+watch(input, () => nextTick(autoGrow))
 
 function newSid() {
   return 'ai-' + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 8)
@@ -110,15 +127,12 @@ function onAIState(st) {
   if (st.message && ['paused', 'error', 'maxrounds', 'done', 'stopped'].includes(st.state)) {
     push({kind: 'note', state: st.state, text: st.message})
   }
-  if (['done', 'stopped', 'error', 'maxrounds'].includes(st.state)) {
-    c.takeoverFull = false
-  }
+  if (['done', 'stopped', 'error', 'maxrounds'].includes(st.state)) c.takeoverFull = false
   emitTakeover()
 }
 
 function onAIStep(step) {
   if (!step) return
-  // 后端每轮推两条：先"准备执行"（无 result），执行完再推带 result 的
   if (!step.result) {
     push({kind: 'cmd', command: step.command, risk: step.risk, thought: step.thought, round: step.round})
     return
@@ -142,15 +156,12 @@ function emitTakeover() {
   })
 }
 
-// 切换终端：换一段对话；若那段对话的会话还在跑，重新挂上事件订阅
 watch(termKey, () => {
-  const c = chat.value
-  subscribe(c.sessionId)
+  subscribe(chat.value.sessionId)
   emitTakeover()
   scrollToBottom()
 }, {immediate: true})
 
-// 终端被关掉时清掉它的对话记录
 watch(() => (props.terminals || []).map(t => t.key).join('|'), () => {
   const alive = new Set((props.terminals || []).map(t => t.key))
   Object.keys(chats).forEach(k => {
@@ -158,20 +169,54 @@ watch(() => (props.terminals || []).map(t => t.key).join('|'), () => {
   })
 })
 
-function setMode(v) {
+// ---- 模式切换：切到有风险的模式当场确认，而不是等到发送时 ----
+async function setMode(v) {
+  if (v === mode.value) return
   if (chat.value.takeoverFull) {
     ElMessage.warning('AI 接管进行中，无法切换模式（先点停止）')
     return
   }
+  if (v === 'takeover') {
+    if (!(await confirmDanger())) return
+  } else if (v === 'exec') {
+    try {
+      await ElMessageBox.confirm(
+        '直接执行模式下，AI 给出的命令会**在当前终端里自动执行**（每次一条，执行完停下并把结果回读给 AI）。\n\n' +
+        '命令可能修改或删除服务器上的内容，建议先在测试服务器上确认效果。',
+        '切换到「直接执行」',
+        {type: 'warning', confirmButtonText: '我知道了', cancelButtonText: '取消'}
+      )
+    } catch (e) {
+      return
+    }
+  }
   mode.value = v
   localStorage.setItem(MODE_KEY, v)
+  if (v === 'takeover') push({kind: 'note', state: 'paused', text: '已切换到完全接管模式：AI 将连续自动执行命令，可随时点「停止」'})
 }
 function setCtx(v) {
   ctxMode.value = v
   localStorage.setItem(CTX_KEY, v)
 }
 
-// ---- 发送 ----
+// 完全接管的危险确认
+async function confirmDanger() {
+  try {
+    await ElMessageBox.confirm(
+      '完全接管模式下，AI 会在服务器上自动连续执行命令，包括安装、删除、重启等有风险的操作，' +
+      '且不会逐条征求你的同意。\n\n' +
+      '⚠️ 请仅在测试服务器上使用，不要在任何业务服务器上使用；出问题本软件无法回退。\n\n' +
+      '执行期间终端会显示"AI 接管中"。遇到需要输入密码时终端会自动解锁并提示你。',
+      '⚠️ 完全接管模式（实验功能）',
+      {type: 'error', confirmButtonText: '我已知悉风险，仅用于测试环境', cancelButtonText: '取消'}
+    )
+    return true
+  } catch (e) {
+    return false
+  }
+}
+
+// ---- 发送：默认就是在继续当前会话 ----
 function buildReq(text, m, sid) {
   return {
     sessionId: sid,
@@ -183,7 +228,7 @@ function buildReq(text, m, sid) {
     lines: ctxLines.value,
     selection: '',
     maxRounds: 0,
-    continueSession: false
+    continueSession: true
   }
 }
 
@@ -198,24 +243,24 @@ function guard() {
 async function send() {
   const text = input.value.trim()
   if (!text || !guard()) return
-  if (mode.value === 'takeover' && !(await confirmDanger())) return
-
   push({kind: 'user', text})
   input.value = ''
+  nextTick(autoGrow)
   running.value = true
-  busyText.value = mode.value === 'takeover' ? 'AI 正在规划第一步…' : 'AI 正在思考…'
+  busyText.value = mode.value === 'takeover' ? 'AI 正在规划下一步…' : 'AI 正在思考…'
+  // 会话默认带上下文：沿用同一段会话（没有才新建）；只有「重置对话」会换新的
+  const sid = chat.value.sessionId || (chat.value.sessionId = newSid())
+  subscribe(sid)
   emitTakeover()
 
   try {
     if (mode.value === 'takeover') {
-      const sid = newSid()
-      chat.value.sessionId = sid
-      subscribe(sid)
       chat.value.takeoverFull = true
       await api.aiStartTakeover(buildReq(text, 'takeover', sid))
       chat.value.takeoverState = {state: 'running', kind: '', round: 0, maxRounds: 0, message: 'AI 接管中'}
     } else {
-      const resp = await api.aiChat(buildReq(text, mode.value, newSid()))
+      const resp = await api.aiChat(buildReq(text, mode.value, sid))
+      chat.value.sessionId = resp.sessionId || sid
       chat.value.lastContext = resp.context || null
       push({kind: 'ai', text: resp.text || '（模型没有给出文字说明）'})
       const cmds = resp.commands || []
@@ -224,7 +269,6 @@ async function send() {
       if (mode.value === 'exec' && cmds.length) await execCommand(cmds[0].command)
     }
   } catch (e) {
-    // 抛异常 = 任务根本没起来：必须把接管状态收回来，否则终端会一直停在锁定态
     push({kind: 'err', text: 'AI 调用失败：' + e})
     chat.value.takeoverFull = false
     chat.value.takeoverState = null
@@ -232,23 +276,6 @@ async function send() {
     running.value = false
     busyText.value = ''
     emitTakeover()
-  }
-}
-
-// 完全接管的危险确认：必须把"不能回退"讲清楚
-async function confirmDanger() {
-  try {
-    await ElMessageBox.confirm(
-      '完全接管模式下，AI 会在服务器上自动连续执行命令，包括安装、删除、重启等有风险的操作，' +
-      '且不会逐条征求你的同意。\n\n' +
-      '⚠️ 请仅在测试服务器上使用，不要在任何业务服务器上使用；出问题本软件无法回退。\n\n' +
-      '执行期间终端会显示"AI 接管中"。遇到需要输入密码时终端会自动解锁并提示你。',
-      '⚠️ 完全接管模式（实验功能）',
-      {type: 'error', confirmButtonText: '我已知悉风险，仅用于测试环境', cancelButtonText: '取消'}
-    )
-    return true
-  } catch (e) {
-    return false
   }
 }
 
@@ -291,42 +318,16 @@ async function stopTakeover() {
   }
 }
 
-// 任务停下后追加新要求：复用同一段上下文继续跑
-async function appendTask() {
-  const text = input.value.trim()
-  if (!text) { ElMessage.warning('请先在输入框里写要追加的要求'); return }
-  if (props.sync) { ElMessage.warning('并行（同步）模式下不支持 AI'); return }
-  if (!(await confirmDanger())) return
-  push({kind: 'user', text: '（追加）' + text})
-  input.value = ''
-  running.value = true
-  try {
-    const sid = chat.value.sessionId || (chat.value.sessionId = newSid())
-    subscribe(sid)
-    chat.value.takeoverFull = true
-    const req = buildReq(text, 'takeover', sid)
-    req.continueSession = true
-    await api.aiStartTakeover(req)
-  } catch (e) {
-    push({kind: 'err', text: '追加任务失败：' + e})
-    chat.value.takeoverFull = false
-    chat.value.takeoverState = null
-  } finally {
-    running.value = false
-    emitTakeover()
-  }
-}
-
-async function clearChat() {
-  if (chat.value.takeoverFull) { ElMessage.warning('AI 正在接管，先停止再清空'); return }
+// 重置对话 = 开一段全新会话（后端上下文一起丢掉）
+async function resetChat() {
+  if (chat.value.takeoverFull) { ElMessage.warning('AI 正在接管，先停止再重置'); return }
   try {
     await api.aiReset(termId.value || '')
   } catch (e) { /* 忽略 */ }
   unsubscribeAll()
-  const keep = termKey.value
-  chats[keep] = blankChat()
+  chats[termKey.value] = blankChat()
   emitTakeover()
-  ElMessage.success('已新建对话')
+  ElMessage.success('已开始新对话')
 }
 
 // ---- 命令卡动作 ----
@@ -371,46 +372,34 @@ onActivated(() => {
 
 <template>
   <div class="ai-panel">
-    <!-- 模式：紧凑分段控件 -->
-    <div class="ai-modes">
-      <button
-        v-for="m in ['suggest', 'exec', 'takeover']"
-        :key="m"
-        class="ai-mode"
-        :class="{active: mode === m, danger: m === 'takeover'}"
-        :title="MODE_TIP[m]"
-        :disabled="chat.takeoverFull"
-        @click="setMode(m)"
-      >{{ MODE_LABEL[m] }}</button>
+    <!-- 状态条：只在接管中 / 需要你处理时出现，一行搞定 -->
+    <div v-if="takeoverActive" class="ai-status" :class="chat.takeoverState.state">
+      <i v-if="chat.takeoverState.state === 'running'" class="ai-dot" />
+      <span class="ai-status-title">{{ STATE_LABEL[chat.takeoverState.state] || chat.takeoverState.state }}</span>
+      <span v-if="chat.takeoverState.maxRounds > 1" class="ai-status-round">
+        {{ chat.takeoverState.round }}/{{ chat.takeoverState.maxRounds }}
+      </span>
+      <span class="ai-status-msg">{{ chat.takeoverState.message }}</span>
+      <span class="ai-status-actions">
+        <template v-if="chat.takeoverState.state === 'paused'">
+          <el-button v-if="locked" size="small" @click="control('continue')">继续等待</el-button>
+          <el-button v-else size="small" type="primary" @click="control('continue')">输入完成，继续</el-button>
+          <el-button size="small" @click="control('ctrlc')">Ctrl+C</el-button>
+        </template>
+        <el-button size="small" type="danger" plain @click="stopTakeover">停止</el-button>
+      </span>
     </div>
 
     <div v-if="aiHint" class="ai-line warn">{{ aiHint }}</div>
     <div v-else-if="sync" class="ai-line warn">并行（同步）模式下 AI 不可用，请先关闭「同步操作」</div>
     <div v-else-if="!canUse" class="ai-line warn">请先打开一个终端</div>
 
-    <!-- 接管 / 需要你处理的提示条（紧凑，不含多余元素） -->
-    <div v-if="chat.takeoverState && chat.takeoverFull" class="ai-status" :class="chat.takeoverState.state">
-      <span class="ai-status-title">{{ STATE_LABEL[chat.takeoverState.state] || chat.takeoverState.state }}</span>
-      <span v-if="chat.takeoverState.maxRounds && chat.takeoverState.maxRounds > 1" class="ai-status-round">
-        {{ chat.takeoverState.round }}/{{ chat.takeoverState.maxRounds }}
-      </span>
-      <span class="ai-status-msg">{{ chat.takeoverState.message }}</span>
-      <div class="ai-status-actions">
-        <template v-if="chat.takeoverState.state === 'paused'">
-          <el-button v-if="locked" size="small" @click="control('continue')">继续等待</el-button>
-          <el-button v-else size="small" type="primary" @click="control('continue')">输入完成，继续</el-button>
-          <el-button size="small" @click="control('ctrlc')">发送 Ctrl+C</el-button>
-        </template>
-        <el-button size="small" type="danger" plain @click="stopTakeover">停止</el-button>
-      </div>
-    </div>
-
     <!-- 对话流 -->
     <div ref="logRef" class="ai-log">
       <div v-if="!chat.messages.length" class="ai-empty">
-        <div class="ai-empty-item" @click="input = '怎么查 XXX.jar 的进程？'">· 怎么查 XXX.jar 的进程？</div>
-        <div class="ai-empty-item" @click="input = '现在的终端内容发生了什么？爆的什么错？'">· 现在的终端内容发生了什么？</div>
-        <div class="ai-empty-item" @click="input = '磁盘快满了，帮我看看哪里占得最多'">· 磁盘快满了，帮我看看哪里占得最多</div>
+        <div class="ai-empty-item" @click="input = '怎么查 XXX.jar 的进程？'">怎么查 XXX.jar 的进程？</div>
+        <div class="ai-empty-item" @click="input = '现在的终端内容发生了什么？爆的什么错？'">现在的终端内容发生了什么？</div>
+        <div class="ai-empty-item" @click="input = '磁盘快满了，帮我看看哪里占得最多'">磁盘快满了，帮我看看哪里占得最多</div>
       </div>
 
       <template v-for="(m, i) in chat.messages" :key="i">
@@ -422,16 +411,15 @@ onActivated(() => {
 
         <div v-else-if="m.kind === 'note'" class="ai-note" :class="m.state">{{ m.text }}</div>
 
+        <!-- 命令卡：徽标 + 轮次 + 动作挤在一行，窄窗口也不换行 -->
         <div v-else-if="m.kind === 'cmd'" class="ai-card cmd">
           <div class="ai-card-head">
-            <el-tag v-if="m.risk" size="small" :type="riskType[m.risk] || 'info'" effect="plain" class="ai-risk">
-              {{ riskLabel[m.risk] || m.risk }}
-            </el-tag>
+            <span v-if="m.risk" class="ai-chip" :class="m.risk">{{ riskLabel[m.risk] || m.risk }}</span>
             <span v-if="m.round && chat.takeoverState && chat.takeoverState.maxRounds > 1" class="ai-round">第 {{ m.round }} 轮</span>
-            <span class="ai-card-actions">
-              <el-button text size="small" @click="copyCmd(m.command)">复制</el-button>
-              <el-button text size="small" @click="insertCmd(m.command)">插入</el-button>
-              <el-button text size="small" type="primary" :disabled="locked" @click="execCommand(m.command)">执行</el-button>
+            <span class="ai-acts">
+              <button class="ai-act" @click="copyCmd(m.command)">复制</button>
+              <button class="ai-act" @click="insertCmd(m.command)">插入</button>
+              <button class="ai-act primary" :disabled="locked" @click="execCommand(m.command)">执行</button>
             </span>
           </div>
           <div v-if="m.thought" class="ai-thought">{{ m.thought }}</div>
@@ -441,11 +429,9 @@ onActivated(() => {
 
         <div v-else-if="m.kind === 'res'" class="ai-card res" :class="m.status">
           <div class="ai-card-head">
-            <span class="ai-res-state">
-              <span v-if="m.status === 'done' && m.exitCode === 0" class="ai-ok">✓ 成功</span>
-              <span v-else-if="m.status === 'done'" class="ai-bad">退出码 {{ m.exitCode }}</span>
-              <span v-else class="ai-bad">{{ STATE_LABEL[m.status] || m.status }}</span>
-            </span>
+            <span v-if="m.status === 'done' && m.exitCode === 0" class="ai-ok">✓ 成功</span>
+            <span v-else-if="m.status === 'done'" class="ai-bad">退出码 {{ m.exitCode }}</span>
+            <span v-else class="ai-bad">{{ STATE_LABEL[m.status] || m.status }}</span>
             <span class="ai-round">{{ (m.elapsedMs / 1000).toFixed(1) }}s</span>
           </div>
           <div v-if="m.message" class="ai-reason">{{ m.message }}</div>
@@ -460,46 +446,55 @@ onActivated(() => {
         <el-icon class="ai-spin"><Loading /></el-icon>
         <span>{{ busyText }}</span>
       </div>
+      <div v-else-if="chat.takeoverFull && chat.takeoverState && chat.takeoverState.state === 'running'" class="ai-busy">
+        <el-icon class="ai-spin"><Loading /></el-icon>
+        <span>AI 接管中，命令在终端里执行…</span>
+      </div>
     </div>
 
-    <!-- 输入区：紧凑两行起，自动增高 -->
-    <div class="ai-input-wrap">
-      <el-input
-        v-model="input"
-        type="textarea"
-        :autosize="{minRows: 2, maxRows: 6}"
-        resize="none"
-        placeholder="描述你的问题，或粘贴一段看不懂的输出（Enter 发送）"
-        @keydown.enter.exact.prevent="send"
-      />
-      <div class="ai-input-foot">
-        <el-select v-model="ctxMode" size="small" class="ai-ctx-select" :disabled="chat.takeoverFull" @change="setCtx">
+    <!-- 输入区：功能行 → 输入框（内嵌发送）→ 模式切换 -->
+    <div class="ai-composer-wrap">
+      <div class="ai-tools">
+        <span class="ai-tool-label">上下文</span>
+        <el-select v-model="ctxMode" size="small" class="ai-ctx" :disabled="chat.takeoverFull" @change="setCtx">
           <el-option label="最近 50 行" value="last50" />
           <el-option label="最近 200 行" value="last200" />
           <el-option label="自上次 AI 命令以来" value="sinceLast" />
           <el-option label="全部（≤32KB）" value="all" />
         </el-select>
-        <el-tooltip content="查看这次会把哪段终端内容发给 AI" placement="top">
-          <el-button text size="small" :disabled="!canUse" @click="previewContext">预览上下文</el-button>
-        </el-tooltip>
-        <span class="ai-foot-spacer" />
-        <el-tooltip content="清空当前终端的对话，并开始新对话" placement="top">
-          <el-button text size="small" :disabled="locked || !chat.messages.length" @click="clearChat">新建对话</el-button>
-        </el-tooltip>
-        <el-button
-          v-if="chat.takeoverState && !chat.takeoverFull && ['stopped','done','maxrounds','error'].includes(chat.takeoverState.state)"
-          size="small"
-          @click="appendTask"
-        >追加任务</el-button>
-        <el-button type="primary" size="small" :loading="running" :disabled="chat.takeoverFull || !canUse" @click="send">
-          发送
-        </el-button>
+        <span v-if="ctxSizeText" class="ai-tool-info">{{ ctxSizeText }}</span>
+        <span class="ai-tool-spacer" />
+        <button class="ai-tool" :disabled="!canUse" @click="previewContext">预览</button>
+        <button class="ai-tool" :disabled="locked || !chat.messages.length" @click="resetChat">重置对话</button>
       </div>
-      <div v-if="chat.lastContext" class="ai-ctx-info text-muted">
-        上次附带：{{ chat.lastContext.lines }} 行 / {{ (chat.lastContext.bytes / 1024).toFixed(1) }} KB
-        <span v-if="chat.lastContext.truncated">· 已截断</span>
-        <span v-if="chat.lastContext.elided">· 重复行已折叠</span>
-        <span v-if="chat.lastContext.dropped">· 起点已被覆盖</span>
+
+      <div class="ai-composer" :class="{disabled: chat.takeoverFull}">
+        <textarea
+          ref="taRef"
+          v-model="input"
+          rows="1"
+          class="ai-textarea"
+          placeholder="给 AI 发消息（Enter 发送，Shift+Enter 换行）"
+          @keydown.enter.exact.prevent="send"
+          @input="autoGrow"
+        />
+        <button class="ai-send" :disabled="!canSend" :title="chat.takeoverFull ? 'AI 接管中' : '发送'" @click="send">
+          <el-icon v-if="running"><Loading /></el-icon>
+          <el-icon v-else><Promotion /></el-icon>
+        </button>
+      </div>
+
+      <div class="ai-modebar">
+        <button
+          v-for="m in ['suggest', 'exec', 'takeover']"
+          :key="m"
+          class="ai-mode"
+          :class="[{active: mode === m}, m]"
+          :title="MODE_TIP[m]"
+          :disabled="chat.takeoverFull"
+          @click="setMode(m)"
+        >{{ MODE_LABEL[m] }}</button>
+        <span class="ai-mode-hint">{{ MODE_TIP[mode] }}</span>
       </div>
     </div>
 
@@ -520,67 +515,17 @@ onActivated(() => {
   height: 100%;
 }
 
-/* 模式选择：紧凑分段 */
-.ai-modes {
-  display: flex;
-  gap: 3px;
-  padding: 6px 8px 4px;
-  flex: 0 0 auto;
-}
-.ai-mode {
-  flex: 1;
-  height: 24px;
-  line-height: 22px;
-  border-radius: 7px;
-  border: 1px solid var(--line);
-  background: var(--card);
-  color: var(--ink-2);
-  font-family: inherit;
-  font-size: 11.5px;
-  cursor: pointer;
-  transition: all .18s ease;
-  padding: 0;
-}
-.ai-mode:hover:not(:disabled) {
-  color: var(--blue-deep);
-  border-color: var(--blue);
-}
-.ai-mode.active {
-  background: var(--blue-soft);
-  border-color: var(--blue);
-  color: var(--blue-deep);
-  font-weight: 600;
-}
-.ai-mode.danger.active {
-  background: var(--red-soft);
-  border-color: var(--red);
-  color: var(--red);
-}
-.ai-mode:disabled {
-  opacity: .5;
-  cursor: not-allowed;
-}
-.ai-line {
-  margin: 0 8px 4px;
-  font-size: 11px;
-  line-height: 1.5;
-}
-.ai-line.warn {
-  color: var(--yellow);
-}
-
-/* 状态条：一行搞定，按钮右对齐 */
+/* 状态条：一行，按钮右对齐 */
 .ai-status {
-  margin: 0 8px 4px;
+  flex: 0 0 auto;
+  margin: 6px 8px 0;
   padding: 5px 7px;
   border-radius: 8px;
   background: var(--red-soft);
   border: 1px solid var(--red);
   display: flex;
   align-items: center;
-  gap: 6px;
-  flex-wrap: wrap;
-  flex: 0 0 auto;
+  gap: 5px;
 }
 .ai-status.paused {
   background: var(--yellow-soft);
@@ -590,43 +535,62 @@ onActivated(() => {
   background: var(--green-soft);
   border-color: var(--green);
 }
+.ai-dot {
+  flex: 0 0 auto;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--red);
+  animation: breathe 1.6s ease-in-out infinite;
+}
 .ai-status-title {
+  flex: 0 0 auto;
   font-size: 11.5px;
   font-weight: 700;
   color: var(--ink);
-  flex: 0 0 auto;
 }
 .ai-status-round {
+  flex: 0 0 auto;
   font-size: 11px;
   color: var(--ink-2);
-  flex: 0 0 auto;
 }
 .ai-status-msg {
-  flex: 1 1 120px;
+  flex: 1 1 100px;
   min-width: 0;
   font-size: 11px;
-  line-height: 1.55;
+  line-height: 1.5;
   color: var(--ink-2);
+  overflow: hidden;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
 }
 .ai-status-actions {
   flex: 0 0 auto;
-  display: flex;
-  gap: 3px;
   margin-left: auto;
+  display: flex;
+  gap: 2px;
 }
+.ai-line {
+  flex: 0 0 auto;
+  margin: 4px 8px 0;
+  font-size: 11px;
+  line-height: 1.5;
+}
+.ai-line.warn { color: var(--yellow); }
 
 /* 对话流 */
 .ai-log {
   flex: 1 1 auto;
   min-height: 0;
   overflow-y: auto;
-  padding: 2px 8px 6px;
+  padding: 6px 8px;
   display: flex;
   flex-direction: column;
   gap: 5px;
 }
 .ai-empty {
-  padding: 4px 0;
+  padding: 2px 0;
 }
 .ai-empty-item {
   padding: 3px 4px;
@@ -634,11 +598,9 @@ onActivated(() => {
   color: var(--blue-deep);
   cursor: pointer;
   border-radius: 6px;
-  line-height: 1.7;
+  line-height: 1.75;
 }
-.ai-empty-item:hover {
-  background: var(--hover-bg);
-}
+.ai-empty-item:hover { background: var(--hover-bg); }
 .ai-msg {
   font-size: 12px;
   line-height: 1.65;
@@ -657,10 +619,7 @@ onActivated(() => {
   border: 1px solid var(--line);
   color: var(--ink);
 }
-.ai-msg.err {
-  background: var(--red-soft);
-  color: var(--red);
-}
+.ai-msg.err { background: var(--red-soft); color: var(--red); }
 .ai-note {
   font-size: 11px;
   padding: 4px 7px;
@@ -686,30 +645,70 @@ onActivated(() => {
 .ai-card.res.blocked,
 .ai-card.res.timeout,
 .ai-card.res.interrupted { border-left: 3px solid var(--yellow); }
+/* 关键：整行 nowrap + 动作区不压缩，窄窗口下也只在"徽标"与"动作"之间留白，不会换行 */
 .ai-card-head {
   display: flex;
   align-items: center;
-  gap: 5px;
-  min-height: 20px;
+  gap: 4px;
+  min-height: 18px;
+  white-space: nowrap;
+  overflow: hidden;
 }
-.ai-risk { height: 18px; line-height: 16px; }
+.ai-chip {
+  flex: 0 0 auto;
+  font-size: 10px;
+  line-height: 15px;
+  padding: 0 5px;
+  border-radius: 4px;
+  border: 1px solid var(--ink-3);
+  color: var(--ink-3);
+}
+.ai-chip.low { border-color: var(--green); color: var(--green); }
+.ai-chip.medium { border-color: var(--yellow); color: var(--yellow); }
+.ai-chip.high { border-color: var(--red); color: var(--red); }
 .ai-round {
-  margin-left: auto;
+  flex: 0 0 auto;
   font-size: 10.5px;
   color: var(--ink-3);
 }
-.ai-card-actions {
+.ai-acts {
   margin-left: auto;
+  flex: 0 0 auto;
   display: flex;
-  gap: 0;
+  align-items: center;
 }
-.ai-res-state { font-size: 11.5px; }
-.ai-ok { color: var(--green); font-weight: 600; }
-.ai-bad { color: var(--yellow); font-weight: 600; }
+/* 微动作按钮：自己写而不是用 el-button —— Element 的按钮自带外边距，
+   四个动作挤在一行时就会被迫换行 */
+.ai-act {
+  border: none;
+  background: transparent;
+  color: var(--ink-3);
+  font-family: inherit;
+  font-size: 11px;
+  line-height: 18px;
+  padding: 0 5px;
+  border-radius: 5px;
+  cursor: pointer;
+  transition: background-color .15s ease, color .15s ease;
+}
+.ai-act:hover:not(:disabled) {
+  background: var(--hover-bg);
+  color: var(--blue-deep);
+}
+.ai-act.primary {
+  color: var(--blue-deep);
+  font-weight: 600;
+}
+.ai-act:disabled {
+  opacity: .45;
+  cursor: not-allowed;
+}
+.ai-ok { flex: 0 0 auto; color: var(--green); font-weight: 600; font-size: 11.5px; }
+.ai-bad { flex: 0 0 auto; color: var(--yellow); font-weight: 600; font-size: 11.5px; }
 .ai-thought {
   font-size: 11.5px;
   color: var(--ink-2);
-  margin-top: 3px;
+  margin-top: 2px;
   line-height: 1.55;
 }
 .ai-cmd {
@@ -754,29 +753,145 @@ onActivated(() => {
 .ai-spin { animation: ai-rotate 1.1s linear infinite; }
 @keyframes ai-rotate { to { transform: rotate(360deg); } }
 
-/* 输入区 */
-.ai-input-wrap {
+/* ---- 输入区 ---- */
+.ai-composer-wrap {
   flex: 0 0 auto;
   padding: 6px 8px 8px;
   border-top: 1px solid var(--line);
 }
-.ai-input-wrap :deep(.el-textarea__inner) {
-  font-size: 12px;
-  padding: 5px 8px;
-}
-.ai-input-foot {
+/* 功能行：低频工具放在输入框上方（GPT / Gemini 的做法） */
+.ai-tools {
   display: flex;
   align-items: center;
-  gap: 2px;
-  margin-top: 4px;
+  gap: 3px;
+  margin-bottom: 6px;
+}
+.ai-tool-label {
+  font-size: 11px;
+  color: var(--ink-3);
+}
+.ai-ctx { width: 130px; }
+.ai-tool-info {
+  font-size: 10.5px;
+  color: var(--ink-3);
+  white-space: nowrap;
+}
+.ai-tool-spacer { flex: 1 1 auto; }
+.ai-tool {
+  border: none;
+  background: transparent;
+  color: var(--ink-3);
+  font-family: inherit;
+  font-size: 11px;
+  padding: 2px 6px;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: background-color .15s ease, color .15s ease;
+}
+.ai-tool:hover:not(:disabled) {
+  background: var(--hover-bg);
+  color: var(--blue-deep);
+}
+.ai-tool:disabled { opacity: .45; cursor: not-allowed; }
+
+/* 输入框：圆角容器 + 内嵌圆形发送按钮 */
+.ai-composer {
+  display: flex;
+  align-items: flex-end;
+  gap: 6px;
+  padding: 6px 6px 6px 10px;
+  border-radius: 14px;
+  border: 1px solid var(--line);
+  background: var(--card);
+  transition: border-color .2s ease, box-shadow .2s ease;
+}
+.ai-composer:focus-within {
+  border-color: var(--blue);
+  box-shadow: 0 0 0 3px var(--blue-focus);
+}
+.ai-composer.disabled {
+  opacity: .7;
+}
+.ai-textarea {
+  flex: 1 1 auto;
+  min-width: 0;
+  max-height: 132px;
+  border: none;
+  outline: none;
+  background: transparent;
+  color: var(--ink);
+  font-family: inherit;
+  font-size: 12.5px;
+  line-height: 1.6;
+  padding: 2px 0;
+  resize: none;
+  overflow-y: auto;
+}
+.ai-textarea::placeholder { color: var(--ink-3); }
+.ai-send {
+  flex: 0 0 auto;
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  border: none;
+  background: var(--blue);
+  color: #fff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  font-size: 14px;
+  transition: background-color .2s ease, opacity .2s ease;
+}
+.ai-send:hover:not(:disabled) { background: var(--blue-deep); }
+.ai-send:disabled {
+  background: var(--line);
+  color: var(--ink-3);
+  cursor: not-allowed;
+}
+
+/* 模式切换：输入框下方的 chip 行（agent 工具的工具选择器） */
+.ai-modebar {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin-top: 6px;
   flex-wrap: wrap;
 }
-.ai-ctx-select { width: 132px; }
-.ai-foot-spacer { flex: 1 1 auto; }
-.ai-ctx-info {
+.ai-mode {
+  border: 1px solid var(--line);
+  background: transparent;
+  color: var(--ink-3);
+  font-family: inherit;
+  font-size: 11px;
+  line-height: 18px;
+  padding: 0 9px;
+  border-radius: 999px;
+  cursor: pointer;
+  transition: all .18s ease;
+}
+.ai-mode:hover:not(:disabled) {
+  color: var(--blue-deep);
+  border-color: var(--blue);
+}
+.ai-mode.active {
+  background: var(--blue-soft);
+  border-color: var(--blue);
+  color: var(--blue-deep);
+  font-weight: 600;
+}
+.ai-mode.takeover.active {
+  background: var(--red-soft);
+  border-color: var(--red);
+  color: var(--red);
+}
+.ai-mode:disabled { opacity: .5; cursor: not-allowed; }
+.ai-mode-hint {
   font-size: 10.5px;
-  margin-top: 3px;
-  line-height: 1.5;
+  color: var(--ink-3);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .ai-preview {
   max-height: 420px;
@@ -788,13 +903,10 @@ onActivated(() => {
   font-size: 11.5px;
 }
 
-/* AI 回复里的 markdown 元素（v-html 生成，需要 :deep） */
+/* AI 回复里的 markdown（v-html 生成，需要 :deep） */
 .ai-msg :deep(.md-p) { margin: 0 0 4px; }
 .ai-msg :deep(.md-p:last-child) { margin-bottom: 0; }
-.ai-msg :deep(.md-h) { font-weight: 600; margin: 4px 0; }
-.ai-msg :deep(.md-h1) { font-size: 14px; }
-.ai-msg :deep(.md-h2) { font-size: 13px; }
-.ai-msg :deep(.md-h3), .ai-msg :deep(.md-h4) { font-size: 12.5px; }
+.ai-msg :deep(.md-h) { font-weight: 600; margin: 4px 0; font-size: 12.5px; }
 .ai-msg :deep(.md-ul) { margin: 2px 0; padding-left: 16px; }
 .ai-msg :deep(code) {
   background: var(--hover-bg);
