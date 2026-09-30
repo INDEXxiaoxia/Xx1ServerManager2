@@ -194,10 +194,6 @@ async function setPassword() {
 
     <div class="card mb-12">
       <h3 class="card-title">AI 设置（SSH 终端的 AI 助手）</h3>
-      <p class="ai-intro text-muted">
-        只支持 <b>OpenAI 兼容接口</b>（<span class="mono">POST /chat/completions</span>）。
-        填好 API Key 与模型名即可；接口地址留空就用 OpenAI 官方地址，换成其它兼容服务时再改。
-      </p>
       <el-form label-width="120px" class="mt-12">
         <el-form-item label="API Key">
           <el-input
@@ -207,9 +203,7 @@ async function setPassword() {
             style="width: 420px"
             :placeholder="ai.apiKeySet ? '已保存（留空表示不修改）' : 'sk-xxxxxxxx'"
           />
-          <div class="field-hint text-muted">
-            用主密码派生密钥加密后保存在本地数据库，不会明文落盘。
-          </div>
+          <span class="text-muted field-hint-inline">本地加密保存</span>
         </el-form-item>
 
         <el-form-item label="模型">
@@ -218,15 +212,12 @@ async function setPassword() {
 
         <el-form-item label="接口地址">
           <el-input v-model="ai.baseURL" :placeholder="AI_DEFAULT_BASE" style="width: 420px" />
-          <div class="field-hint text-muted">
-            留空即用 <span class="mono">{{ AI_DEFAULT_BASE }}</span>；
-            填到 <b>/v1</b> 结尾即可，程序自动拼接 <span class="mono">/chat/completions</span>。
-          </div>
+          <div class="field-hint text-muted">open 格式 api 地址或代理地址，填到 /v1 结尾即可</div>
         </el-form-item>
 
         <el-form-item label="接管最大轮数">
           <el-input-number v-model="ai.maxRounds" :min="1" :max="100" />
-          <span class="text-muted field-hint-inline">完全接管模式下最多自动执行多少轮，达到上限会暂停并等你继续</span>
+          <span class="text-muted field-hint-inline">达到上限自动暂停</span>
         </el-form-item>
 
         <el-form-item label="请求超时(秒)">
@@ -235,7 +226,7 @@ async function setPassword() {
 
         <el-form-item label="终端上下文行数">
           <el-input-number v-model="ai.contextLines" :min="20" :max="2000" :step="50" />
-          <span class="text-muted field-hint-inline">每次问 AI 时附带终端最近多少行，行数越多越费 token</span>
+          <span class="text-muted field-hint-inline">附带终端最近多少行</span>
         </el-form-item>
 
         <el-form-item>
@@ -285,27 +276,13 @@ async function setPassword() {
 </template>
 
 <style scoped>
-/* AI 设置顶部说明 */
-.ai-intro {
-  margin: 8px 0 0;
-  font-size: 12.5px;
-  line-height: 1.7;
-  max-width: 720px;
-}
-.ai-intro b {
-  color: var(--blue-deep);
-}
 /* 说明小字：单独占一行，不与输入框挤在一排 */
 .field-hint {
   font-size: 12px;
   line-height: 1.7;
-  margin-left: 10px;
-  max-width: 520px;
-}
-.el-form-item .field-hint {
-  display: block;
   margin-left: 0;
   margin-top: 4px;
+  max-width: 520px;
 }
 .field-hint-inline {
   font-size: 12px;
