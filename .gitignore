@@ -20,6 +20,7 @@ prj/build/icon-source.png
 
 # 分发包（含 exe 与 WebView2 安装器，体积大不入库；需要时本地重新生成即可）
 dist/
+release/
 
 # 本地构建工具（如 NSIS 便携版，供 wails build -nsis 使用）
 .tools/
@@ -33,6 +34,27 @@ prj/frontend/dist/
 .idea/
 .vscode/
 *.iml
+.tm/
+.trae/
+*.code-workspace
+
+# ============ 密钥 / 隐私 / 本地配置 ============
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.p12
+*.pfx
+*.crt
+id_rsa*
+id_ed25519*
+*.sqlite
+*.db
+data.db
+credentials.json
+secrets.json
+**/ServerManager2/
 
 # ============ 操作系统文件 ============
 .DS_Store
