@@ -112,8 +112,8 @@ func (a *App) SetMasterPassword(password string) error {
 		return err
 	}
 	a.locked = false
-	// 之前若用本机密钥加密过密码，这里改用主密钥重新加密，避免设置主密码后旧密码解不开
-	a.reencryptServerPasswords()
+	// 之前若用本机密钥加密过密码 / AI Key，这里改用主密钥重新加密，避免设置主密码后解不开
+	a.reencryptProtectedSecrets()
 	return nil
 }
 
@@ -127,18 +127,18 @@ func (a *App) VerifyMasterPassword(password string) (bool, error) {
 	if a.crypto.VerifyMasterPassword(password, hash, salt) {
 		_ = a.crypto.SetMasterPassword(password, salt)
 		a.locked = false
-		// 解锁后顺手把仍是本机密钥加密的密码迁移到主密钥
-		a.reencryptServerPasswords()
+		// 解锁后顺手把仍是本机密钥加密的密码 / AI Key 迁移到主密钥
+		a.reencryptProtectedSecrets()
 		return true, nil
 	}
 	return false, nil
 }
 
 // ChangeMasterPassword 重置主密码：要求当前主密码正确，并把已保存的服务器密码
-// 从旧密钥重新加密到新密钥下。
-// 不做这一步的话，任何一条用旧主密钥加密的密码都会永久解不开（等于把密码弄丢），
+// 与 AI API Key 从旧密钥重新加密到新密钥下。
+// 不做这一步的话，任何一条用旧主密钥加密的密文都会永久解不开（等于把密码弄丢），
 // 所以这里先解出明文、再换新密钥写回；单条解不开的保持原样不动（绝不删除）。
-// 返回 {"reencrypted":n,"failed":m}。
+// 返回 {"reencrypted":n,"failed":m,"aiKeyReencrypted":bool,"aiKeyFailed":bool}。
 func (a *App) ChangeMasterPassword(oldPassword, newPassword string) (map[string]any, error) {
 	hash, _ := a.store.GetSetting("masterPasswordHash")
 	salt, _ := a.store.GetSetting("encryptionSalt")
@@ -177,6 +177,22 @@ func (a *App) ChangeMasterPassword(oldPassword, newPassword string) (map[string]
 		plains = append(plains, pending{id: sv.ID, plain: plain})
 	}
 
+	// 1b) AI API Key（与服务器密码同一套密钥，重置时必须一并迁移）
+	aiPlain := ""
+	aiPending := false
+	aiKeyFailed := false
+	if enc, _ := a.store.GetSetting(aiKeyAPIKey); strings.TrimSpace(enc) != "" {
+		if p, err := a.crypto.DecryptPassword(enc); err == nil {
+			aiPlain = p
+			aiPending = true
+		} else if p, ok := a.decryptWithMachineKey(enc); ok {
+			aiPlain = p
+			aiPending = true
+		} else {
+			aiKeyFailed = true
+		}
+	}
+
 	// 2) 换新盐、新哈希、新密钥
 	newSalt, err := a.crypto.GenerateSalt()
 	if err != nil {
@@ -207,7 +223,25 @@ func (a *App) ChangeMasterPassword(oldPassword, newPassword string) (map[string]
 		}
 		reencrypted++
 	}
-	return map[string]any{"reencrypted": reencrypted, "failed": failed}, nil
+
+	aiKeyReencrypted := false
+	if aiPending {
+		enc, err := a.crypto.EncryptPassword(aiPlain)
+		if err != nil {
+			aiKeyFailed = true
+		} else if err := a.store.SetSetting(aiKeyAPIKey, enc); err != nil {
+			aiKeyFailed = true
+		} else {
+			aiKeyReencrypted = true
+		}
+	}
+
+	return map[string]any{
+		"reencrypted":       reencrypted,
+		"failed":            failed,
+		"aiKeyReencrypted":  aiKeyReencrypted,
+		"aiKeyFailed":       aiKeyFailed,
+	}, nil
 }
 
 // decryptWithMachineKey 用本机种子派生密钥尝试解密。
@@ -229,9 +263,16 @@ func (a *App) decryptWithMachineKey(enc string) (string, bool) {
 	return plain, true
 }
 
+// reencryptProtectedSecrets 把仍用本机密钥加密的敏感项迁移到当前主密钥下。
+// 覆盖：服务器登录密码、AI API Key。每次设置主密码 / 解锁都会跑一遍，
+// 因此即便中途失败的条目，下次解锁也能补上，不会丢。
+func (a *App) reencryptProtectedSecrets() {
+	a.reencryptServerPasswords()
+	a.reencryptAIAPIKey()
+}
+
 // reencryptServerPasswords 把"用本机密钥加密"的服务器密码改用当前主密钥重新加密。
-// 做法：先用本机密钥解出明文，再用主密钥加密。每次解锁（主密钥已在内存）都会尝试一次，
-// 因此即便中途失败的条目，下次解锁也能补上，不会丢密码。
+// 做法：先用本机密钥解出明文，再用主密钥加密。
 func (a *App) reencryptServerPasswords() {
 	seed, _ := a.store.GetSetting(machineSeedKey)
 	if seed == "" {
@@ -266,6 +307,30 @@ func (a *App) reencryptServerPasswords() {
 		sv.Password = enc
 		_ = a.store.UpdateServer(&sv)
 	}
+}
+
+// reencryptAIAPIKey 把仍用本机密钥加密的 AI API Key 改用当前主密钥重新加密。
+// 与服务器密码同一套迁移逻辑，避免"先存 AI Key、后设主密码"后 Key 解不开。
+func (a *App) reencryptAIAPIKey() {
+	if a.store == nil || a.crypto == nil || !a.crypto.HasMasterKey() {
+		return
+	}
+	enc, _ := a.store.GetSetting(aiKeyAPIKey)
+	if strings.TrimSpace(enc) == "" {
+		return
+	}
+	if _, err := a.crypto.DecryptPassword(enc); err == nil {
+		return
+	}
+	plain, ok := a.decryptWithMachineKey(enc)
+	if !ok {
+		return
+	}
+	newEnc, err := a.crypto.EncryptPassword(plain)
+	if err != nil {
+		return
+	}
+	_ = a.store.SetSetting(aiKeyAPIKey, newEnc)
 }
 
 // GetAppInfo 返回应用基础信息（未解锁状态）

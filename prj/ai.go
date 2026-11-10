@@ -162,7 +162,16 @@ func (a *App) aiClient() (*aiclient.Client, models.AISettings, error) {
 		}
 		plain, err := a.crypto.DecryptPassword(enc)
 		if err != nil {
-			return nil, s, errors.New("API Key 解密失败，请在设置里重新填写")
+			// 主密码设置之前用本机密钥加密的历史 Key：当前密钥解不开时回退本机密钥，
+			// 并顺手迁移到当前主密钥，避免下次再兜底。
+			if p, ok := a.decryptWithMachineKey(enc); ok {
+				plain = p
+				if newEnc, e2 := a.crypto.EncryptPassword(p); e2 == nil {
+					_ = a.store.SetSetting(aiKeyAPIKey, newEnc)
+				}
+			} else {
+				return nil, s, errors.New("API Key 解密失败，请在设置里重新填写")
+			}
 		}
 		key = plain
 	}

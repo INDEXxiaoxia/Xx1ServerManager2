@@ -252,3 +252,113 @@ func TestSetMasterPasswordMigratesMachineKeyCipher(t *testing.T) {
 		t.Fatalf("设置主密码后密码不应丢失，got %q", got.Password)
 	}
 }
+
+// storedAICipher 读取库里保存的 AI API Key 密文
+func storedAICipher(t *testing.T, a *App) string {
+	t.Helper()
+	v, err := a.store.GetSetting(aiKeyAPIKey)
+	if err != nil {
+		t.Fatalf("读取 AI Key 失败: %v", err)
+	}
+	return v
+}
+
+// decryptAIKeyForTest 用当前内存密钥解出 AI API Key 明文
+func decryptAIKeyForTest(t *testing.T, a *App) string {
+	t.Helper()
+	enc := storedAICipher(t, a)
+	if enc == "" {
+		t.Fatal("AI Key 密文为空")
+	}
+	plain, err := a.crypto.DecryptPassword(enc)
+	if err != nil {
+		t.Fatalf("解密 AI Key 失败: %v", err)
+	}
+	return plain
+}
+
+// TestSetMasterPasswordMigratesAIAPIKey 先存 AI Key、后设主密码：Key 必须可解且已迁移到主密钥
+func TestSetMasterPasswordMigratesAIAPIKey(t *testing.T) {
+	a := newTestApp(t)
+	if err := a.ensureMachineKey(); err != nil {
+		t.Fatalf("初始化本机密钥失败: %v", err)
+	}
+	if err := a.SaveAISettings(models.AISettings{
+		BaseURL: "https://api.example.com/v1",
+		APIKey:  "sk-test-before-master",
+		Model:   "gpt-test",
+	}); err != nil {
+		t.Fatalf("保存 AI 设置失败: %v", err)
+	}
+	machineCipher := storedAICipher(t, a)
+	if machineCipher == "" || machineCipher == "sk-test-before-master" {
+		t.Fatal("AI Key 必须以本机密钥密文落库")
+	}
+
+	if err := a.SetMasterPassword("master123"); err != nil {
+		t.Fatalf("设置主密码失败: %v", err)
+	}
+	if got := storedAICipher(t, a); got == machineCipher {
+		t.Fatal("设置主密码后 AI Key 应改用主密钥重新加密")
+	}
+	if got := decryptAIKeyForTest(t, a); got != "sk-test-before-master" {
+		t.Fatalf("设置主密码后 AI Key 不应丢失，got %q", got)
+	}
+
+	// 锁定后再用主密码解锁，仍应可解
+	if err := a.Lock(); err != nil {
+		t.Fatalf("锁定失败: %v", err)
+	}
+	if ok, _ := a.VerifyMasterPassword("master123"); !ok {
+		t.Fatal("主密码应可解锁")
+	}
+	if got := decryptAIKeyForTest(t, a); got != "sk-test-before-master" {
+		t.Fatalf("解锁后 AI Key 应仍可解出，got %q", got)
+	}
+}
+
+// TestChangeMasterPasswordReencryptsAIAPIKey 重置主密码后 AI Key 不能丢
+func TestChangeMasterPasswordReencryptsAIAPIKey(t *testing.T) {
+	a := newTestApp(t)
+	if err := a.SetMasterPassword("old123"); err != nil {
+		t.Fatalf("设置主密码失败: %v", err)
+	}
+	if err := a.SaveAISettings(models.AISettings{
+		APIKey: "sk-under-old-master",
+		Model:  "gpt-test",
+	}); err != nil {
+		t.Fatalf("保存 AI 设置失败: %v", err)
+	}
+	before := storedAICipher(t, a)
+
+	res, err := a.ChangeMasterPassword("old123", "new123")
+	if err != nil {
+		t.Fatalf("重置主密码失败: %v", err)
+	}
+	if ok, _ := res["aiKeyReencrypted"].(bool); !ok {
+		t.Fatalf("应报告 AI Key 已重加密: %+v", res)
+	}
+	if ok, _ := res["aiKeyFailed"].(bool); ok {
+		t.Fatalf("AI Key 不应失败: %+v", res)
+	}
+	if got := storedAICipher(t, a); got == before || got == "sk-under-old-master" {
+		t.Fatal("密文应已用新密钥重写")
+	}
+	if got := decryptAIKeyForTest(t, a); got != "sk-under-old-master" {
+		t.Fatalf("重置后 AI Key 不应丢失，got %q", got)
+	}
+
+	if err := a.Lock(); err != nil {
+		t.Fatalf("锁定失败: %v", err)
+	}
+	if ok, _ := a.VerifyMasterPassword("old123"); ok {
+		t.Fatal("旧主密码应失效")
+	}
+	ok, err := a.VerifyMasterPassword("new123")
+	if err != nil || !ok {
+		t.Fatalf("新主密码应可解锁: ok=%v err=%v", ok, err)
+	}
+	if got := decryptAIKeyForTest(t, a); got != "sk-under-old-master" {
+		t.Fatalf("新主密码解锁后 AI Key 应仍可解出，got %q", got)
+	}
+}

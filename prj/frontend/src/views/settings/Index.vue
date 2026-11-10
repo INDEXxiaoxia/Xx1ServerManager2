@@ -131,13 +131,19 @@ async function setPassword() {
   try {
     if (masterSet.value) {
       if (!pw.old) { ElMessage.warning('请输入当前主密码'); return }
-      // 重置会先用旧密钥解出已存密码、再用新密钥重新加密，密码不会丢
+      // 重置会先用旧密钥解出已存密码 / AI Key、再用新密钥重新加密，不会丢
       const res = await appStore.changePassword(pw.old, pw.p1)
       const n = (res && res.reencrypted) || 0
       const failed = (res && res.failed) || 0
       ElMessage.success(`${n} 台服务器的密码已用新主密码重新加密`)
+      if (res && res.aiKeyReencrypted) {
+        ElMessage.success('AI API Key 已用新主密码重新加密')
+      }
       if (failed > 0) {
         ElMessage.warning(`${failed} 台服务器的密码解不开（历史密文），已原样保留，请在服务器列表里重新填写密码`)
+      }
+      if (res && res.aiKeyFailed) {
+        ElMessage.warning('AI API Key 解不开（历史密文），请在上方 AI 设置里重新填写')
       }
     } else {
       await appStore.setPassword(pw.p1)
@@ -244,8 +250,8 @@ async function setPassword() {
             <el-tag v-if="appStore.locked" type="info" class="ml-6">已锁定</el-tag>
           </div>
           <div class="text-muted mt-12">
-            主密码用于加密保存服务器登录密码。未设置时，密码仍以本机密钥加密存放在本地数据库中，
-            重启后照常可用，不会丢失；设置主密码后会改用主密码派生密钥重新加密，安全性更高。
+            主密码用于加密保存服务器登录密码与 AI API Key。未设置时，仍以本机密钥加密存放在本地数据库中，
+            重启后照常可用，不会丢失；设置或重置主密码后会改用主密码派生密钥重新加密，安全性更高。
           </div>
         </div>
         <el-button type="primary" @click="openPwDialog">{{ masterSet ? '重置主密码' : '设置主密码' }}</el-button>
@@ -261,7 +267,7 @@ async function setPassword() {
         <el-form-item label="确认密码"><el-input v-model="pw.p2" type="password" show-password /></el-form-item>
       </el-form>
       <p v-if="masterSet" class="dialog-hint">
-        重置后已保存的服务器密码会用新主密码重新加密，不会丢失。
+        重置后已保存的服务器密码与 AI API Key 会用新主密码重新加密，不会丢失。
       </p>
       <template #footer>
         <el-button @click="pwDialog = false">取消</el-button>
