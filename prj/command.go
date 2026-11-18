@@ -7,7 +7,6 @@ import (
 	"github.com/wailsapp/wails/v2/pkg/runtime"
 
 	"ServerManager2/internal/models"
-	"ServerManager2/internal/sshx"
 	"ServerManager2/internal/tasks"
 )
 
@@ -66,7 +65,7 @@ func (a *App) doCommand(sessionID string, t commandTask, command string, timeout
 		a.emitCommand(sessionID, t, command, "failed", -1, "", "", 0, err.Error())
 		return
 	}
-	c := sshx.New(sv.Host, sv.Port, sv.Username, sv.Password, 10)
+	c := a.newServerClient(sv, 10)
 	if err := c.Connect(); err != nil {
 		a.emitCommand(sessionID, t, command, "failed", -1, "", "", 0, err.Error())
 		return

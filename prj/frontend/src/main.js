@@ -1,3 +1,4 @@
+import '@/utils/root-permission'
 import {createApp} from 'vue'
 import ElementPlus from 'element-plus'
 import 'element-plus/dist/index.css'
@@ -46,6 +47,8 @@ app.config.errorHandler = (err, instance, info) => {
 }
 
 window.addEventListener('error', (e) => {
+  // 浏览器将未完成的尺寸通知延后到下一帧；此通知不属于应用异常。
+  if (/^ResizeObserver loop (completed with undelivered notifications\.|limit exceeded)$/.test(e.message || '')) { e.preventDefault(); return }
   showErrorBar(formatError(e.error || e.message, 'window.onerror'))
 })
 window.addEventListener('unhandledrejection', (e) => {

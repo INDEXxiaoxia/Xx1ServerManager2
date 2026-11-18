@@ -73,7 +73,7 @@ func (a *App) UploadFileTask(id, serverID, localPath, remotePath string) error {
 	if err != nil {
 		return err
 	}
-	c := sshx.New(sv.Host, sv.Port, sv.Username, sv.Password, 15)
+	c := a.newServerClient(sv, 15)
 	if err = c.Connect(); err != nil {
 		return err
 	}

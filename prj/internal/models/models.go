@@ -25,6 +25,13 @@ const (
 
 // Server 服务器配置
 type Server struct {
+	AuthType      string `json:"authType"`
+	PrivateKey    string `json:"privateKey,omitempty"`
+	KeyPassphrase string `json:"keyPassphrase,omitempty"`
+	DefaultRoot   bool   `json:"defaultRoot"`
+	SudoPassword  string `json:"sudoPassword,omitempty"`
+	KeySet        bool   `json:"keySet"`
+
 	ID       string `json:"id"`
 	Name     string `json:"name"`
 	Host     string `json:"host"`

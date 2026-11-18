@@ -580,6 +580,12 @@ export namespace models {
 		}
 	}
 	export class Server {
+	    authType: string;
+	    privateKey?: string;
+	    keyPassphrase?: string;
+	    defaultRoot: boolean;
+	    sudoPassword?: string;
+	    keySet: boolean;
 	    id: string;
 	    name: string;
 	    host: string;
@@ -599,6 +605,12 @@ export namespace models {
 	
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.authType = source["authType"];
+	        this.privateKey = source["privateKey"];
+	        this.keyPassphrase = source["keyPassphrase"];
+	        this.defaultRoot = source["defaultRoot"];
+	        this.sudoPassword = source["sudoPassword"];
+	        this.keySet = source["keySet"];
 	        this.id = source["id"];
 	        this.name = source["name"];
 	        this.host = source["host"];

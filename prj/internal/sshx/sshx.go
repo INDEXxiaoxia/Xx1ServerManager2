@@ -20,6 +20,12 @@ import (
 
 // Client 为语言冲突与 ssh 包区分，SSH 客户端封装
 type Client struct {
+	RefreshRoot func() (bool, string)
+
+	AuthType, PrivateKey, KeyPassphrase, SudoPassword string
+	DefaultRoot                                       bool
+	RequestRoot                                       func() (string, error)
+
 	Host     string
 	Port     int
 	Username string
@@ -49,8 +55,22 @@ func (c *Client) sshConfig() *ssh.ClientConfig {
 
 // Connect 建立连接
 func (c *Client) Connect() error {
+	config := c.sshConfig()
+	if c.AuthType == "key" {
+		var signer ssh.Signer
+		var err error
+		if c.KeyPassphrase != "" {
+			signer, err = ssh.ParsePrivateKeyWithPassphrase([]byte(c.PrivateKey), []byte(c.KeyPassphrase))
+		} else {
+			signer, err = ssh.ParsePrivateKey([]byte(c.PrivateKey))
+		}
+		if err != nil {
+			return fmt.Errorf("私钥解析失败：%w", err)
+		}
+		config.Auth = []ssh.AuthMethod{ssh.PublicKeys(signer)}
+	}
 	addr := fmt.Sprintf("%s:%d", c.Host, c.Port)
-	client, err := ssh.Dial("tcp", addr, c.sshConfig())
+	client, err := ssh.Dial("tcp", addr, config)
 	if err != nil {
 		return err
 	}
@@ -146,6 +166,19 @@ func (b *cappedOutput) String() string {
 	return b.Builder.String()
 }
 func (c *Client) execCommand(command string, timeout int, useSudo bool, limit int) (int, string, string) {
+	code, out, stderr := c.execCommandOnce(command, timeout, useSudo, limit)
+	if code != 0 && IsPermissionError(stderr+" "+out) && c.Username != "root" && c.RequestRoot != nil {
+		pw, err := c.RequestRoot()
+		if err != nil {
+			return code, out, err.Error()
+		}
+		c.DefaultRoot = true
+		c.SudoPassword = pw
+		return c.execCommandOnce(command, timeout, useSudo, limit)
+	}
+	return code, out, stderr
+}
+func (c *Client) execCommandOnce(command string, timeout int, useSudo bool, limit int) (int, string, string) {
 
 	if c.client == nil {
 		return -1, "", "SSH未连接"
@@ -156,10 +189,7 @@ func (c *Client) execCommand(command string, timeout int, useSudo bool, limit in
 	}
 	defer sess.Close()
 
-	cmd := command
-	if useSudo && c.Username != "root" {
-		cmd = buildSudoCommand(command, c.Password)
-	}
+	cmd := c.commandFor(command)
 
 	if timeout > 0 {
 		done := make(chan struct{})
@@ -225,10 +255,14 @@ func cleanSudoErr(stderr, username string) string {
 // ---- SFTP ----
 
 func (c *Client) sftpClient() (*sftp.Client, error) {
+	c.refreshRoot()
 	if c.client == nil {
 		return nil, errors.New("SSH未连接")
 	}
 	if c.sftp == nil {
+		if c.DefaultRoot && c.Username != "root" {
+			return c.rootSFTP()
+		}
 		sc, err := sftp.NewClient(c.client)
 		if err != nil {
 			return nil, err
@@ -1329,6 +1363,14 @@ func (c *Client) OpenPTYCommand(cols, rows int, command string) (*ssh.Session, i
 		sess.Close()
 		return nil, nil, nil, err
 	}
+	c.refreshRoot()
+	if c.DefaultRoot && c.Username != "root" {
+		if command == "" {
+			command = "sudo -i"
+		} else {
+			command = "sudo -- sh -c " + shellQuote(command)
+		}
+	}
 	var startErr error
 	if command == "" {
 		startErr = sess.Shell()
@@ -1342,4 +1384,34 @@ func (c *Client) OpenPTYCommand(cols, rows int, command string) (*ssh.Session, i
 	}
 	go func() { _ = sess.Wait(); _ = pw.Close() }()
 	return sess, stdin, pr, nil
+}
+
+func IsPermissionError(s string) bool {
+	s = strings.ToLower(s)
+	for _, p := range []string{"permission denied", "operation not permitted", "must be root", "authentication failure", "a password is required", "incorrect password", "sudo: a terminal"} {
+		if strings.Contains(s, p) {
+			return true
+		}
+	}
+	return false
+}
+func (c *Client) commandFor(command string) string {
+	c.refreshRoot()
+	if c.DefaultRoot && c.Username != "root" {
+		return buildSudoCommand("sh -c "+shellQuote(command), c.SudoPassword)
+	}
+	return command
+}
+
+func (c *Client) refreshRoot() {
+	if c.RefreshRoot == nil {
+		return
+	}
+	root, pw := c.RefreshRoot()
+	if root != c.DefaultRoot && c.sftp != nil {
+		_ = c.sftp.Close()
+		c.sftp = nil
+	}
+	c.DefaultRoot = root
+	c.SudoPassword = pw
 }

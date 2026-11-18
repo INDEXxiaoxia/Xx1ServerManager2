@@ -9,7 +9,6 @@ import (
 	"github.com/wailsapp/wails/v2/pkg/runtime"
 
 	"ServerManager2/internal/models"
-	"ServerManager2/internal/sshx"
 )
 
 const monitorInterval = 5 * time.Second
@@ -61,7 +60,7 @@ func (a *App) fetchStats(serverID string) (map[string]any, error) {
 	if err != nil {
 		return nil, err
 	}
-	c := sshx.New(sv.Host, sv.Port, sv.Username, sv.Password, 10)
+	c := a.newServerClient(sv, 10)
 	if err := c.Connect(); err != nil {
 		return nil, err
 	}
@@ -193,7 +192,7 @@ func (a *App) GetTopProcesses(serverID string, limit int) ([]map[string]any, err
 	if err != nil {
 		return nil, err
 	}
-	c := sshx.New(sv.Host, sv.Port, sv.Username, sv.Password, 10)
+	c := a.newServerClient(sv, 10)
 	if err := c.Connect(); err != nil {
 		return nil, err
 	}

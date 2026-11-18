@@ -11,7 +11,7 @@ const props = defineProps({
 const emit = defineEmits(['update:modelValue', 'saved'])
 
 // groupId：单选（一个服务器只能属于一个分组），空串 = 未分组
-const form = reactive({id: '', name: '', host: '', port: 22, username: '', password: '', groupId: ''})
+const form = reactive({id: '', name: '', host: '', port: 22, username: '', password: '', groupId: '', authType:'password', privateKey:'', keyPassphrase:'', defaultRoot:false, sudoPassword:''})
 const groups = ref([])
 const servers = ref([])
 const testing = ref(false)
@@ -25,10 +25,10 @@ watch(() => props.modelValue, (v) => {
       Object.assign(form, {
         id: props.server.id, name: props.server.name, host: props.server.host,
         port: props.server.port, username: props.server.username,
-        password: '', groupId: groupIdOf(props.server)
+        password: '', groupId: groupIdOf(props.server), authType: props.server.authType || 'password', privateKey:'', keyPassphrase:'', defaultRoot:!!props.server.defaultRoot, sudoPassword:''
       })
     } else {
-      Object.assign(form, {id: '', name: '', host: '', port: 22, username: '', password: '', groupId: ''})
+      Object.assign(form, {id: '', name: '', host: '', port: 22, username: '', password: '', groupId: '', authType:'password', privateKey:'', keyPassphrase:'', defaultRoot:false, sudoPassword:''})
     }
   }
 })
@@ -40,13 +40,13 @@ async function loadOptions() {
 }
 
 async function testConnection() {
-  if (!form.host || !form.username || !form.password) {
+  if (!form.host || !form.username) {
     ElMessage.warning('请填写主机、用户名和密码')
     return
   }
   testing.value = true
   try {
-    const r = await api.testConnection(form.host, Number(form.port), form.username, form.password)
+    const r = await window.go.main.App.TestServerConfig({...form, port:Number(form.port)})
     if (r.connected) ElMessage.success(r.message)
     else ElMessage.error(r.message)
   } catch (e) {
@@ -90,7 +90,14 @@ async function save() {
       <el-form-item label="用户名">
         <el-input v-model="form.username" placeholder="登录用户名" />
       </el-form-item>
-      <el-form-item label="密码">
+      <el-form-item label="登录方式"><el-radio-group v-model="form.authType"><el-radio value="password">密码</el-radio><el-radio value="key">SSH 密钥</el-radio></el-radio-group></el-form-item>
+      <template v-if="form.authType === 'key'">
+        <el-form-item label="私钥"><el-input v-model="form.privateKey" type="textarea" :rows="4" placeholder="粘贴 OpenSSH / PEM 私钥；编辑时留空保持原密钥" /></el-form-item>
+        <el-form-item label="密钥口令"><el-input v-model="form.keyPassphrase" type="password" show-password placeholder="加密私钥的口令（无口令可留空）" /></el-form-item>
+      </template>
+      <el-form-item label="默认权限"><el-checkbox v-model="form.defaultRoot">默认使用 root 权限（sudo）</el-checkbox></el-form-item>
+      <el-form-item v-if="form.defaultRoot" label="sudo 密码"><el-input v-model="form.sudoPassword" type="password" show-password placeholder="默认使用登录密码；密钥登录可另填" /></el-form-item>
+      <el-form-item v-if="form.authType !== 'key'" label="密码">
         <el-input v-model="form.password" type="password" show-password
                   :placeholder="form.id ? '留空则保持原密码' : '登录密码'" />
       </el-form-item>

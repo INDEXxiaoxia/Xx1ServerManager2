@@ -1,5 +1,12 @@
 <script setup>
-import {ref, computed, watch, onMounted} from 'vue'
+import ContainerDashboard from "@/components/ContainerDashboard.vue"
+import ContainerLogs from "@/components/ContainerLogs.vue"
+const logRow=ref(null),logVisible=ref(false),stats=ref([]),statsVisible=ref(false),statsBusy=ref(false),statsError=ref('')
+let statsTimer
+async function loadStats(){if(statsBusy.value)return;statsBusy.value=true;const sid=serverId.value,bin=engine.value;try{const out=await api.runRemoteCommand(sid,`${bin} stats --all --no-stream --format '{{json .}}'`,20);if(sid===serverId.value&&bin===engine.value)stats.value=out.trim().split('\n').filter(Boolean).map(line=>{const item=JSON.parse(line);const row=rows.value.find(r=>r.ID===item.ID || r.ID===item.Container || r.Names===item.Name);return {...item,State:row?.Status || '—'}});statsError.value=''}catch(e){statsError.value=String(e)}finally{statsBusy.value=false}}
+watch(statsVisible,v=>{clearInterval(statsTimer);if(v){loadStats();statsTimer=setInterval(loadStats,5000)}})
+onBeforeUnmount(()=>clearInterval(statsTimer))
+import {ref, computed, watch, onMounted,onBeforeUnmount} from 'vue'
 import {ElMessage, ElMessageBox} from 'element-plus'
 import {api} from '@/api'
 import {useRouter} from 'vue-router'
@@ -53,6 +60,7 @@ async function action(row, operation) {
   finally { busy.value = false }
 }
 async function inspect(row, logs) {
+  if(logs){logRow.value={...row,serverId:serverId.value,engine:engine.value};logVisible.value=true;return}
   if (busy.value || !/^[a-f0-9]{12,64}$/.test(row.ID)) return
   const id = serverId.value, bin = engine.value
   busy.value = true; detail.value = ''; visible.value = true
@@ -61,7 +69,7 @@ async function inspect(row, logs) {
   catch(e) { detail.value = String(e) }
   finally { busy.value = false }
 }
-watch([serverId, engine], () => { localStorage.setItem('xx1.container.server',serverId.value); load() })
+watch([serverId, engine], () => { statsVisible.value=false;stats.value=[];statsError.value=''; localStorage.setItem('xx1.container.server',serverId.value); load() })
 onMounted(async () => { servers.value = await api.listServers(); if (!servers.value.some(s => s.id === serverId.value)) serverId.value = servers.value[0]?.id || ''; else load() })
 </script>
 <template>
@@ -74,6 +82,7 @@ onMounted(async () => { servers.value = await api.listServers(); if (!servers.va
           <el-input v-model="keyword" placeholder="搜索容器 / 镜像" clearable class="container-search"><template #prefix><el-icon><Search /></el-icon></template></el-input>
           <span class="text-muted">共 {{ filteredRows.length }} 个</span>
         </div>
+        <el-button @click="statsVisible=true">资源总览</el-button>
         <el-button @click="load" :loading="loading" :disabled="busy"><el-icon><Refresh /></el-icon>&nbsp;刷新</el-button>
       </div>
       <el-alert v-if="error" :title="error" description="请确认服务器已安装所选容器引擎，且 SSH 用户有访问权限。" type="error" :closable="false" />
@@ -115,6 +124,8 @@ onMounted(async () => { servers.value = await api.listServers(); if (!servers.va
         </template></el-table-column>
       </el-table>
     </div>
+    <el-drawer v-model="logVisible" :title="(logRow?.Names || '')+' · 日志'" size="75%" append-to-body destroy-on-close><ContainerLogs v-if="logVisible && logRow" :server-id="logRow.serverId" :engine="logRow.engine" :container="logRow" /></el-drawer>
+    <el-drawer v-model="statsVisible" title="容器资源总览 · 每 5 秒刷新" size="80%" append-to-body><el-alert v-if="statsError" :title="statsError" type="error"/><div class="text-muted" style="margin-bottom:12px">{{statsBusy ? '正在更新…' : '每 5 秒自动更新'}}</div><ContainerDashboard :stats="stats" :containers="rows" /></el-drawer>
     <el-drawer v-model="visible" :title="detailTitle" size="65%" append-to-body><pre class="container-output" v-loading="busy">{{ detail }}</pre></el-drawer>
   </div>
 </template>

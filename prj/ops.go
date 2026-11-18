@@ -61,7 +61,7 @@ func (a *App) ListServerDisks(serverID string) ([]models.DiskInfo, error) {
 	if err != nil {
 		return nil, err
 	}
-	c := sshx.New(sv.Host, sv.Port, sv.Username, sv.Password, 10)
+	c := a.newServerClient(sv, 10)
 	if err := c.Connect(); err != nil {
 		return nil, err
 	}
@@ -147,7 +147,7 @@ func (a *App) DrillDiskDir(serverID, mount, path string, useSudo bool) (models.D
 	if err != nil {
 		return models.DrillResult{}, err
 	}
-	c := sshx.New(sv.Host, sv.Port, sv.Username, sv.Password, 10)
+	c := a.newServerClient(sv, 10)
 	if err := c.Connect(); err != nil {
 		return models.DrillResult{}, err
 	}
@@ -169,7 +169,7 @@ func (a *App) runDiskAnalysis(task *diskTask, taskID string, sv *models.Server, 
 	}()
 	elapsed := func() int64 { return time.Since(start).Milliseconds() }
 
-	c := sshx.New(sv.Host, sv.Port, sv.Username, sv.Password, 10)
+	c := a.newServerClient(sv, 10)
 	if err := c.Connect(); err != nil {
 		a.emitDiskProgress(taskID, "error", "连接服务器失败："+err.Error())
 		a.emitDiskDone(taskID, map[string]any{"ok": false, "message": "连接服务器失败：" + err.Error()})

@@ -60,6 +60,8 @@ export function GetRemoteDirSizes(arg1:string,arg2:Array<string>):Promise<Array<
 
 export function GetRemoteFileInfo(arg1:string,arg2:string):Promise<Record<string, any>>;
 
+export function GetRootCacheMinutes():Promise<number>;
+
 export function GetServer(arg1:string):Promise<models.Server>;
 
 export function GetServerStats(arg1:string):Promise<Record<string, any>>;
@@ -79,6 +81,8 @@ export function IsLocked():Promise<boolean>;
 export function IsMasterPasswordSet():Promise<boolean>;
 
 export function IsUnlocked():Promise<boolean>;
+
+export function ListAIModels(arg1:string,arg2:string):Promise<Array<string>>;
 
 export function ListGroups():Promise<Array<models.Group>>;
 
@@ -104,7 +108,11 @@ export function ReadRemoteTextFile(arg1:string,arg2:string,arg3:string):Promise<
 
 export function RenameRemote(arg1:string,arg2:string,arg3:string):Promise<void>;
 
+export function RequestServerRoot(arg1:string):Promise<void>;
+
 export function ResolveRemotePath(arg1:string,arg2:string):Promise<string>;
+
+export function ResolveRootRequest(arg1:string,arg2:string,arg3:boolean):Promise<void>;
 
 export function RunRemoteCommand(arg1:string,arg2:string,arg3:number):Promise<string>;
 
@@ -129,6 +137,8 @@ export function SelectLocalSavePath(arg1:string):Promise<string>;
 export function ServiceAction(arg1:string,arg2:string,arg3:string):Promise<Record<string, any>>;
 
 export function SetMasterPassword(arg1:string):Promise<void>;
+
+export function SetRootCacheMinutes(arg1:number):Promise<void>;
 
 export function SetServerStatus(arg1:string,arg2:string):Promise<void>;
 
@@ -158,6 +168,8 @@ export function TerminalWriteMany(arg1:Array<string>,arg2:string):Promise<number
 
 export function TestAIConnection():Promise<models.AITestResult>;
 
+export function TestServerConfig(arg1:models.Server):Promise<Record<string, any>>;
+
 export function TestServerConnection(arg1:string,arg2:number,arg3:string,arg4:string):Promise<Record<string, any>>;
 
 export function TestStoredServer(arg1:string):Promise<Record<string, any>>;
@@ -171,5 +183,7 @@ export function UploadToServer(arg1:string,arg2:string,arg3:string):Promise<void
 export function ValidateRemoteDir(arg1:string,arg2:string):Promise<Record<string, any>>;
 
 export function VerifyMasterPassword(arg1:string):Promise<boolean>;
+
+export function WatchContainerLogs(arg1:string,arg2:string,arg3:string,arg4:string,arg5:number):Promise<void>;
 
 export function WriteRemoteTextFile(arg1:string,arg2:string,arg3:models.TextFileWriteRequest):Promise<void>;

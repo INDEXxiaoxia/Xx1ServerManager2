@@ -1,5 +1,17 @@
 // Wails Go 后端 API 封装
-const App = window.go.main.App
+const rawApp = window.go.main.App
+const permissionMethods = /^(ListRemote|StatRemote|ReadRemote|WriteRemote|DeleteRemote|MakeRemote|RenameRemote|ChmodRemote|SearchRemote|GetRemote|DownloadFromServer|UploadToServer)/
+const App = new Proxy(rawApp, {get(target,name) {
+ const fn = target[name]
+ if (typeof fn !== 'function' || !permissionMethods.test(name)) return fn
+ return async (...args) => {
+  try { return await fn(...args) }
+  catch(e) {
+   if (!/permission denied|operation not permitted|sudo.*密码|sudo.*password/i.test(String(e))) throw e
+   await target.RequestServerRoot(args[0]); return fn(...args)
+  }
+ }
+}})
 
 // 确保后端列表返回值为数组：Go 侧可能返回 null/undefined（nil 切片），
 // 此处统一兜底为空数组，避免前端对 null 调用 .length/.forEach 等导致白屏

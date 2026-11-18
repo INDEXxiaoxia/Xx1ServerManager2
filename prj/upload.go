@@ -7,7 +7,6 @@ import (
 	"github.com/google/uuid"
 	"github.com/wailsapp/wails/v2/pkg/runtime"
 
-	"ServerManager2/internal/sshx"
 	"ServerManager2/internal/tasks"
 )
 
@@ -71,7 +70,7 @@ func (a *App) doUpload(sessionID string, t uploadTask) {
 		a.emitUpload(sessionID, t, "failed", 0, 0, 0, err.Error())
 		return
 	}
-	c := sshx.New(sv.Host, sv.Port, sv.Username, sv.Password, 10)
+	c := a.newServerClient(sv, 10)
 	if err := c.Connect(); err != nil {
 		a.emitUpload(sessionID, t, "failed", 0, 0, 0, err.Error())
 		return

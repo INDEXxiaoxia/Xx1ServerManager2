@@ -127,7 +127,7 @@ func (a *App) openTerminal(serverID string, cols, rows int, command, id string) 
 	if err != nil {
 		return "", err
 	}
-	c := sshx.New(sv.Host, sv.Port, sv.Username, sv.Password, 10)
+	c := a.newTerminalClient(sv, command)
 	if err := c.Connect(); err != nil {
 		return "", err
 	}
@@ -275,7 +275,7 @@ func (a *App) RunRemoteCommand(serverID, command string, timeout int) (string, e
 	if timeout <= 0 {
 		timeout = 10
 	}
-	c := sshx.New(sv.Host, sv.Port, sv.Username, sv.Password, 10)
+	c := a.newServerClient(sv, 10)
 	if err := c.Connect(); err != nil {
 		return "", err
 	}

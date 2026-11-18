@@ -123,7 +123,7 @@ function handleMore(command, row) {
         </div>
       </div>
 
-      <el-table :data="filtered" v-loading="loading" @selection-change="v => selected = v" stripe>
+      <el-table @row-dblclick="(row, column) => { if (column.property) goTerminal(row) }" :data="filtered" v-loading="loading" @selection-change="v => selected = v" stripe>
         <el-table-column type="selection" width="45" />
         <el-table-column prop="name" label="名称" min-width="140" show-overflow-tooltip />
         <el-table-column prop="host" label="主机" min-width="140" />

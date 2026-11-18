@@ -36,6 +36,15 @@ func (a *App) IsLocked() bool { return a.locked }
 // 未设置主密码时（只由本机密钥保护），解锁是一次点击，没有可验证的凭据。
 // 注意：锁定不会删除任何已保存的密码——密文照旧留在库里，解锁后仍可解出。
 func (a *App) Lock() error {
+	a.permissionMu.Lock()
+	a.elevated = nil
+	for _, ch := range a.permissionRequests {
+		select {
+		case ch <- permissionAnswer{}:
+		default:
+		}
+	}
+	a.permissionMu.Unlock()
 	a.locked = true
 	if a.crypto != nil {
 		a.crypto.ClearKey()
@@ -237,10 +246,10 @@ func (a *App) ChangeMasterPassword(oldPassword, newPassword string) (map[string]
 	}
 
 	return map[string]any{
-		"reencrypted":       reencrypted,
-		"failed":            failed,
-		"aiKeyReencrypted":  aiKeyReencrypted,
-		"aiKeyFailed":       aiKeyFailed,
+		"reencrypted":      reencrypted,
+		"failed":           failed,
+		"aiKeyReencrypted": aiKeyReencrypted,
+		"aiKeyFailed":      aiKeyFailed,
 	}, nil
 }
 

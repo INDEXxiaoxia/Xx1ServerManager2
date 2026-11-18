@@ -11,6 +11,12 @@ import (
 
 // App 应用主结构，所有导出方法将被 Wails 绑定到前端
 type App struct {
+	rootRequestLocks map[string]*sync.Mutex
+
+	permissionMu       sync.Mutex
+	permissionRequests map[string]chan permissionAnswer
+	elevated           map[string]rootGrant
+
 	aiExecutionMu sync.Mutex
 	transferMu    sync.Mutex
 	transfers     map[string]*fileTransfer

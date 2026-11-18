@@ -1,7 +1,9 @@
 package main
 
 import (
+	"encoding/json"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -28,6 +30,18 @@ func (a *App) getServerWithPassword(id string) (*models.Server, error) {
 			sv.Password = dec
 		}
 	}
+	if strings.HasPrefix(sv.Password, "xx1-auth-v1:") {
+		var auth serverAuth
+		if err := json.Unmarshal([]byte(strings.TrimPrefix(sv.Password, "xx1-auth-v1:")), &auth); err != nil {
+			return nil, fmt.Errorf("认证配置损坏")
+		}
+		sv.Password = auth.Password
+		sv.AuthType = auth.AuthType
+		sv.PrivateKey = auth.PrivateKey
+		sv.KeyPassphrase = auth.Passphrase
+		sv.DefaultRoot = auth.Root
+		sv.SudoPassword = auth.Sudo
+	}
 	return sv, nil
 }
 
@@ -38,21 +52,26 @@ func (a *App) ListServers() ([]models.Server, error) {
 		return nil, err
 	}
 	for i := range servers {
-		servers[i].Password = ""
+		decoded, e := a.getServerWithPassword(servers[i].ID)
+		if e != nil {
+			return nil, e
+		}
+		servers[i] = *decoded
+		redactServer(&servers[i])
 	}
 	return servers, nil
 }
 
 // GetServer 获取单个服务器（不返回密码）
 func (a *App) GetServer(id string) (models.Server, error) {
-	sv, err := a.store.GetServerByID(id)
+	sv, err := a.getServerWithPassword(id)
 	if err != nil {
 		return models.Server{}, err
 	}
 	if sv == nil {
 		return models.Server{}, fmt.Errorf("服务器不存在")
 	}
-	sv.Password = ""
+	redactServer(sv)
 	return *sv, nil
 }
 
@@ -65,6 +84,34 @@ func (a *App) SaveServer(sv models.Server) (models.Server, error) {
 	// 必须先在这里分流：早先把原密文塞回 sv.Password 再加密，会让"改名不改密码"的
 	// 编辑把密文二次加密，密码当场失效。
 	plain := sv.Password
+	var old *models.Server
+	if existing != nil {
+		old, _ = a.getServerWithPassword(sv.ID)
+	}
+	if sv.AuthType == "key" || sv.DefaultRoot || (old != nil && (old.AuthType == "key" || old.DefaultRoot)) {
+		if old != nil {
+			if sv.Password == "" {
+				sv.Password = old.Password
+			}
+			if sv.PrivateKey == "" {
+				sv.PrivateKey = old.PrivateKey
+			}
+			if sv.KeyPassphrase == "" {
+				sv.KeyPassphrase = old.KeyPassphrase
+			}
+			if sv.SudoPassword == "" {
+				sv.SudoPassword = old.SudoPassword
+			}
+		}
+		if sv.AuthType == "key" && sv.PrivateKey == "" {
+			return sv, fmt.Errorf("请输入私钥")
+		}
+		data, e := json.Marshal(serverAuth{sv.Password, sv.AuthType, sv.PrivateKey, sv.KeyPassphrase, sv.SudoPassword, sv.DefaultRoot})
+		if e != nil {
+			return sv, e
+		}
+		plain = "xx1-auth-v1:" + string(data)
+	}
 	if isNew {
 		sv.ID = uuid.NewString()
 		sv.CreatedAt = now
@@ -94,13 +141,16 @@ func (a *App) SaveServer(sv models.Server) (models.Server, error) {
 	}
 
 	if isNew {
-		return sv, a.store.AddServer(&sv)
+		err := a.store.AddServer(&sv)
+		redactServer(&sv)
+		return sv, err
 	}
 	if err := a.store.UpdateServer(&sv); err != nil {
 		return sv, err
 	}
 	// 主机/端口/账号/密码可能已变更，旧连接不能继续复用
 	a.invalidateFileClient(sv.ID)
+	redactServer(&sv)
 	return sv, nil
 }
 
@@ -136,14 +186,14 @@ func (a *App) TestStoredServer(id string) (map[string]any, error) {
 	if err != nil {
 		return nil, err
 	}
-	ok, msg := sshx.New(sv.Host, sv.Port, sv.Username, sv.Password, 10).TestConnection()
+	ok, msg := a.newServerClient(sv, 10).TestConnection()
 	status := models.StatusConnected
 	if !ok {
 		status = models.StatusError
 	}
 	sv.Status = status
 	sv.UpdatedAt = time.Now()
-	_ = a.store.UpdateServer(sv)
+	_ = a.SetServerStatus(sv.ID, string(status))
 	return map[string]any{"connected": ok, "message": msg}, nil
 }
 
@@ -156,4 +206,44 @@ func (a *App) SetServerStatus(id string, status string) error {
 	sv.Status = models.ServerStatus(status)
 	sv.UpdatedAt = time.Now()
 	return a.store.UpdateServer(sv)
+}
+
+type serverAuth struct {
+	Password, AuthType, PrivateKey, Passphrase, Sudo string
+	Root                                             bool
+}
+
+func redactServer(s *models.Server) {
+	s.KeySet = s.PrivateKey != ""
+	s.Password = ""
+	s.PrivateKey = ""
+	s.KeyPassphrase = ""
+	s.SudoPassword = ""
+}
+func (a *App) TestServerConfig(sv models.Server) (map[string]any, error) {
+	if sv.ID != "" {
+		old, e := a.getServerWithPassword(sv.ID)
+		if e != nil {
+			return nil, e
+		}
+		if sv.Password == "" {
+			sv.Password = old.Password
+		}
+		if sv.PrivateKey == "" {
+			sv.PrivateKey = old.PrivateKey
+		}
+		if sv.KeyPassphrase == "" {
+			sv.KeyPassphrase = old.KeyPassphrase
+		}
+		if sv.SudoPassword == "" {
+			sv.SudoPassword = old.SudoPassword
+		}
+	}
+	c := a.newServerClient(&sv, 10)
+	defer c.Close()
+	err := c.Connect()
+	if err != nil {
+		return map[string]any{"connected": false, "message": err.Error()}, nil
+	}
+	return map[string]any{"connected": true, "message": "连接成功"}, nil
 }

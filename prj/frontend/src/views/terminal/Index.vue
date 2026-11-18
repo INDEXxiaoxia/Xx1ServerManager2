@@ -29,6 +29,17 @@ function zoomTerminal(delta) {
   for (const term of terms.values()) term.options.fontSize = 13 * terminalZoom.value / 100
   nextTick(refitAll)
 }
+const draggedTab = ref('')
+function reorderTab(target) {
+  const from = tabs.value.findIndex(t => t.key === draggedTab.value)
+  const to = tabs.value.findIndex(t => t.key === target)
+  if (from >= 0 && to >= 0 && from !== to) {
+    const [tab] = tabs.value.splice(from, 1)
+    tabs.value.splice(to, 0, tab)
+    nextTick(refitAll)
+  }
+  draggedTab.value = ''
+}
 const tabsRef = ref(null)
 
 // 右侧面板：像编辑器的侧边栏一样，用「页签」表示当前展开哪一块。
@@ -570,9 +581,8 @@ function writeToTerm(text) {
   const term = activeTerm()
   if (!tab || !tab.termId || !text) return
   // 走与键盘输入同一条通道，远端会按 bracketed paste 模式处理
-  ignoreSessionError(api.terminalWrite(tab.termId, text))
-  // 同步开启时，粘贴内容也要同步给其他终端
-  if (syncMode.value) broadcastInput(tab.key, text)
+  // xterm 根据远端启用的 bracketed paste 模式包装文本，再通过 onData 发送。
+  term?.paste(text)
   term?.focus()
 }
 
@@ -888,6 +898,11 @@ function onGlobalKeydown(ev) {
           :id="'tab-' + t.key"
           :key="t.key"
           class="term-tab"
+          draggable="true"
+          @dragstart="draggedTab = t.key; $event.dataTransfer.setData('text/plain', t.key)"
+          @dragover.prevent
+          @drop.prevent="reorderTab(t.key)"
+          @dragend="draggedTab = ''"
           :class="{active: activeKey === t.key, locked: false}"
           @click="activateTab(t.key)"
         >

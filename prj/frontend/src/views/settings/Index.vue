@@ -7,6 +7,9 @@ import {applyTheme, THEMES, getStoredTheme} from '@/theme'
 
 const appStore = useAppStore()
 const settings = reactive({maxConcurrent: 5, uploadTimeout: 300, commandTimeout: 30, theme: 'light'})
+const rootCacheMinutes = ref(0)
+const rootCacheSaving = ref(false)
+async function saveRootCache(){rootCacheSaving.value=true;try{await window.go.main.App.SetRootCacheMinutes(rootCacheMinutes.value);ElMessage.success('临时 root 权限缓存时间已保存')}catch(e){ElMessage.error(String(e))}finally{rootCacheSaving.value=false}}
 const masterSet = ref(false)
 const pwDialog = ref(false)
 const pw = reactive({old: '', p1: '', p2: ''})
@@ -23,6 +26,13 @@ const ai = reactive({
   baseURL: '', apiKey: '', apiKeySet: false, model: '',
   maxRounds: 20, timeout: 60, contextLines: 200
 })
+const modelOptions = ref([])
+const modelsLoading = ref(false)
+async function fetchModels() {
+ modelsLoading.value = true
+ try { modelOptions.value = await window.go.main.App.ListAIModels(ai.baseURL, ai.apiKey); if (!modelOptions.value.length) ElMessage.info('接口没有返回模型，可手动填写') }
+ catch(e) { ElMessage.error(String(e)) } finally { modelsLoading.value = false }
+}
 const aiSaving = ref(false)
 const aiTesting = ref(false)
 const aiTestMsg = ref('')
@@ -72,6 +82,7 @@ async function testAI() {
 }
 
 async function load() {
+ rootCacheMinutes.value = await window.go.main.App.GetRootCacheMinutes()
   const s = await api.getSettings()
   Object.assign(settings, s)
   // 主题以本地持久化值为准（可在解锁前生效），数据库仅作同步
@@ -216,7 +227,8 @@ async function setPassword() {
         </el-form-item>
 
         <el-form-item label="模型">
-          <el-input v-model="ai.model" placeholder="gpt-4o-mini" style="width: 260px" />
+          <el-select v-model="ai.model" filterable allow-create default-first-option placeholder="选择或输入模型" style="width:260px"><el-option v-for="m in modelOptions" :key="m" :value="m" :label="m" /></el-select>
+          <el-button :loading="modelsLoading" @click="fetchModels" style="margin-left:8px">获取模型</el-button>
         </el-form-item>
 
         <el-form-item label="接管最大轮数">
@@ -243,6 +255,7 @@ async function setPassword() {
 
     <div class="card mb-12">
       <h3 class="card-title">安全</h3>
+      <el-form label-width="190px" class="mt-12"><el-form-item label="临时 root 权限缓存时间"><el-select v-model="rootCacheMinutes" style="width:230px"><el-option :value="0" label="退出软件前一直有效"/><el-option :value="10" label="10 分钟"/><el-option :value="60" label="60 分钟"/></el-select><el-button :loading="rootCacheSaving" @click="saveRootCache" style="margin-left:8px">保存</el-button></el-form-item><div class="text-muted">按服务器分别缓存，仅保存在内存。时限从授权成功开始计算；修改配置后立即按新时限判断。锁定应用也会清除授权，已运行的终端不会因缓存到期被强制关闭。</div></el-form>
       <div class="flex-between mt-12">
         <div class="sec-info">
           <div>主密码状态：

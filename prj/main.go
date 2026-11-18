@@ -20,11 +20,11 @@ func main() {
 	err := wails.Run(&options.App{
 		Title: "Xx1ServerManager2",
 		// 默认窗口：终端 + 右侧面板并排时 1440×950 比较舒展
-		Width:  1440,
-		Height: 950,
+		Width:  1000,
+		Height: 680,
 		// 低于 1100×700 时右侧面板与终端都要开始挤，直接给个下限
-		MinWidth:  1100,
-		MinHeight: 700,
+		MinWidth:  760,
+		MinHeight: 480,
 		AssetServer: &assetserver.Options{
 			Assets: assets,
 		},

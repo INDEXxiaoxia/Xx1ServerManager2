@@ -1,4 +1,6 @@
 <script setup>
+import PresetFormDialog from "@/components/PresetFormDialog.vue"
+const presetDialog = ref(false)
 import {ref, computed, watch, onMounted} from 'vue'
 import {ElMessage} from 'element-plus'
 import {api} from '@/api'
@@ -77,6 +79,8 @@ watch(running, (v, old) => {
   <div class="execute-panel">
     <div class="card mb-12">
       <h3 class="card-title">批量命令执行</h3>
+      <el-button text type="primary" size="small" @click="presetDialog = true">＋ 添加预设命令</el-button>
+      <PresetFormDialog v-model="presetDialog" type="command" :item="{command: command}" @saved="load" />
       <el-alert v-if="!selectedServers.length" title="请在左侧选择目标服务器" type="warning" show-icon :closable="false" class="mt-12" />
           <template v-else>
             <div class="mt-12">

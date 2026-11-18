@@ -980,3 +980,7 @@ html, body, #app {
     transition-duration: .001s !important;
   }
 }
+/* Keep nested flex content inside the client area at small resolutions. */
+.el-container, .el-main, .page-shell { min-width: 0; min-height: 0; }
+@media (max-width: 1100px) { .terminal-page .sidebar { width: 280px; } .layout .aside { max-width: 160px; } }
+@media (max-height: 700px) { .layout .header { flex-shrink: 0; height: 44px; } }

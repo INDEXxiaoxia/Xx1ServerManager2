@@ -1,4 +1,6 @@
 <script setup>
+import PresetFormDialog from "@/components/PresetFormDialog.vue"
+const presetDialog = ref(false)
 import {ref, onMounted, computed} from 'vue'
 import {ElMessage} from 'element-plus'
 import {api} from '@/api'
@@ -77,6 +79,8 @@ const taskList = computed(() => Object.values(tasks.value || {}))
   <div class="upload-panel">
     <div class="card mb-12">
       <h3 class="card-title">批量文件上传</h3>
+      <el-button text type="primary" size="small" @click="presetDialog = true">＋ 添加预设路径</el-button>
+      <PresetFormDialog v-model="presetDialog" type="path" :item="{path: remoteDir}" @saved="load" />
       <el-alert v-if="!selectedServers.length" title="请在左侧选择目标服务器" type="warning" show-icon :closable="false" class="mt-12" />
       <template v-else>
         <div class="mt-12">

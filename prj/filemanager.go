@@ -33,7 +33,7 @@ func (a *App) dialServer(serverID string) (*models.Server, *sshx.Client, error) 
 	if err != nil {
 		return nil, nil, err
 	}
-	c := sshx.New(sv.Host, sv.Port, sv.Username, sv.Password, 10)
+	c := a.newServerClient(sv, 10)
 	if err := c.Connect(); err != nil {
 		return sv, nil, err
 	}

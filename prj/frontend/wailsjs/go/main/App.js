@@ -118,6 +118,10 @@ export function GetRemoteFileInfo(arg1, arg2) {
   return window['go']['main']['App']['GetRemoteFileInfo'](arg1, arg2);
 }
 
+export function GetRootCacheMinutes() {
+  return window['go']['main']['App']['GetRootCacheMinutes']();
+}
+
 export function GetServer(arg1) {
   return window['go']['main']['App']['GetServer'](arg1);
 }
@@ -156,6 +160,10 @@ export function IsMasterPasswordSet() {
 
 export function IsUnlocked() {
   return window['go']['main']['App']['IsUnlocked']();
+}
+
+export function ListAIModels(arg1, arg2) {
+  return window['go']['main']['App']['ListAIModels'](arg1, arg2);
 }
 
 export function ListGroups() {
@@ -206,8 +214,16 @@ export function RenameRemote(arg1, arg2, arg3) {
   return window['go']['main']['App']['RenameRemote'](arg1, arg2, arg3);
 }
 
+export function RequestServerRoot(arg1) {
+  return window['go']['main']['App']['RequestServerRoot'](arg1);
+}
+
 export function ResolveRemotePath(arg1, arg2) {
   return window['go']['main']['App']['ResolveRemotePath'](arg1, arg2);
+}
+
+export function ResolveRootRequest(arg1, arg2, arg3) {
+  return window['go']['main']['App']['ResolveRootRequest'](arg1, arg2, arg3);
 }
 
 export function RunRemoteCommand(arg1, arg2, arg3) {
@@ -256,6 +272,10 @@ export function ServiceAction(arg1, arg2, arg3) {
 
 export function SetMasterPassword(arg1) {
   return window['go']['main']['App']['SetMasterPassword'](arg1);
+}
+
+export function SetRootCacheMinutes(arg1) {
+  return window['go']['main']['App']['SetRootCacheMinutes'](arg1);
 }
 
 export function SetServerStatus(arg1, arg2) {
@@ -314,6 +334,10 @@ export function TestAIConnection() {
   return window['go']['main']['App']['TestAIConnection']();
 }
 
+export function TestServerConfig(arg1) {
+  return window['go']['main']['App']['TestServerConfig'](arg1);
+}
+
 export function TestServerConnection(arg1, arg2, arg3, arg4) {
   return window['go']['main']['App']['TestServerConnection'](arg1, arg2, arg3, arg4);
 }
@@ -340,6 +364,10 @@ export function ValidateRemoteDir(arg1, arg2) {
 
 export function VerifyMasterPassword(arg1) {
   return window['go']['main']['App']['VerifyMasterPassword'](arg1);
+}
+
+export function WatchContainerLogs(arg1, arg2, arg3, arg4, arg5) {
+  return window['go']['main']['App']['WatchContainerLogs'](arg1, arg2, arg3, arg4, arg5);
 }
 
 export function WriteRemoteTextFile(arg1, arg2, arg3) {
