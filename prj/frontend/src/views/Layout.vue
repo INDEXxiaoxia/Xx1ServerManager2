@@ -1,4 +1,5 @@
 <script setup>
+import TransferCenter from "@/components/TransferCenter.vue"
 import {computed, ref, onMounted, onBeforeUnmount} from 'vue'
 import {useRoute} from 'vue-router'
 import {ElMessage, ElMessageBox} from 'element-plus'
@@ -30,6 +31,7 @@ const menus = [
   {path: '/monitor', title: '实时监控', icon: 'DataLine'},
   {path: '/terminal', title: 'SSH 终端', icon: 'Monitor'},
   {path: '/files', title: '文件管理', icon: 'Folder'},
+  {path: '/containers', title: '容器管理', icon: 'Box'},
   {path: '/batch', title: '批量操作', icon: 'Upload'},
   {path: '/ops', title: '运维工具', icon: 'DataAnalysis'},
   {path: '/groups', title: '分组管理', icon: 'FolderOpened'},
@@ -119,6 +121,7 @@ async function lock() {
           </router-view>
         </div>
       </el-main>
+      <TransferCenter />
     </el-container>
   </el-container>
 </template>

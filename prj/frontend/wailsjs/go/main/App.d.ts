@@ -20,6 +20,8 @@ export function AssignGroupServers(arg1:string,arg2:Array<string>):Promise<Recor
 
 export function CancelDiskAnalysis(arg1:string):Promise<void>;
 
+export function CancelFileTransfer(arg1:string):Promise<void>;
+
 export function ChangeMasterPassword(arg1:string,arg2:string):Promise<Record<string, any>>;
 
 export function ChmodRemote(arg1:string,arg2:string,arg3:number):Promise<void>;
@@ -146,6 +148,8 @@ export function TerminalClose(arg1:string):Promise<void>;
 
 export function TerminalOpen(arg1:string,arg2:number,arg3:number):Promise<string>;
 
+export function TerminalOpenContainer(arg1:string,arg2:string,arg3:string,arg4:string,arg5:number,arg6:number):Promise<string>;
+
 export function TerminalResize(arg1:string,arg2:number,arg3:number):Promise<void>;
 
 export function TerminalWrite(arg1:string,arg2:string):Promise<void>;
@@ -159,6 +163,8 @@ export function TestServerConnection(arg1:string,arg2:number,arg3:string,arg4:st
 export function TestStoredServer(arg1:string):Promise<Record<string, any>>;
 
 export function UnlockWithoutPassword():Promise<void>;
+
+export function UploadFileTask(arg1:string,arg2:string,arg3:string,arg4:string):Promise<void>;
 
 export function UploadToServer(arg1:string,arg2:string,arg3:string):Promise<void>;
 

@@ -47,10 +47,12 @@ function removeLocalFile(path) {
 }
 
 async function start() {
+  if (store.uploadRunning) return
   if (!selectedServers.value.length) { ElMessage.warning('请选择服务器'); return }
   if (!localFiles.value.length) { ElMessage.warning('请选择本地文件'); return }
   if (!remoteDir.value) { ElMessage.warning('请输入远程目录'); return }
   try {
+    store.beginUpload()
     const sid = await api.startBatchUpload(
       selectedServers.value.map(s => s.id),
       localFiles.value.map(f => f.path),
@@ -59,6 +61,7 @@ async function start() {
     store.setUploadSession(sid)
     ElMessage.success('上传任务已启动')
   } catch (e) {
+    store.pendingUpload = false; store.uploadRunning = false; store.earlyUpload = []
     ElMessage.error('启动失败：' + e)
   }
 }

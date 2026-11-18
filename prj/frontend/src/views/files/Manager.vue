@@ -1,4 +1,7 @@
 <script setup>
+import {useTransfers} from "@/store/transfers"
+const transfers = useTransfers()
+import GroupedServerSelect from "@/components/GroupedServerSelect.vue"
 import {ref, reactive, computed, watch, onMounted, onBeforeUnmount} from 'vue'
 import {useRoute} from 'vue-router'
 import {ElMessage, ElMessageBox} from 'element-plus'
@@ -9,7 +12,8 @@ import FileEditorDialog from '@/components/FileEditorDialog.vue'
 const route = useRoute()
 
 const servers = ref([])
-const selectedId = ref('')
+const selectedId = ref(localStorage.getItem('xx1.server.files/Manager.vue') || '')
+watch(selectedId, id => localStorage.setItem('xx1.server.files/Manager.vue', id || ''))
 const currentPath = ref('/')
 const files = ref([])
 const loading = ref(false)
@@ -115,7 +119,7 @@ async function loadServers() {
   servers.value = await api.listServers()
   if (route.query.serverId && servers.value.some(s => s.id === route.query.serverId)) {
     selectedId.value = route.query.serverId
-  } else if (servers.value.length) {
+  } else if (!servers.value.some(s => s.id === selectedId.value) && servers.value.length) {
     selectedId.value = servers.value[0].id
   }
 }
@@ -386,23 +390,20 @@ function sizeMethodLabel(method) {
   return method === 'walk' ? 'SFTP 遍历统计' : '远端 du 统计'
 }
 
+watch(() => transfers.tasks.filter(t => t.status === 'success').length, () => {
+  if (transfers.tasks.some(t => t.status === 'success' && t.serverId === selectedId.value && t.remotePath.substring(0,t.remotePath.lastIndexOf('/')) === (currentPath.value === '/' ? '' : currentPath.value))) loadDir()
+})
 // ---- 上传 / 下载 ----
 const uploadLoading = ref(false)
 async function pickUpload() {
+  const serverId = selectedId.value
+  const dir = currentPath.value
+  const serverName = servers.value.find(s => s.id === serverId)?.name || serverId
   const localPath = await api.selectLocalFile()
   if (!localPath) return
   const name = localPath.split(/[\\/]/).pop()
-  uploadLoading.value = true
-  try {
-    const remotePath = (currentPath.value === '/' ? '' : currentPath.value) + '/' + name
-    await api.uploadToServer(selectedId.value, localPath, remotePath)
-    ElMessage.success('上传成功：' + name)
-    loadDir()
-  } catch (err) {
-    ElMessage.error('上传失败：' + err)
-  } finally {
-    uploadLoading.value = false
-  }
+  try { transfers.add(serverId, serverName, localPath, (dir === '/' ? '' : dir) + '/' + name) }
+  catch(e) { ElMessage.error(String(e)) }
 }
 
 async function download(entry) {
@@ -564,17 +565,18 @@ watch(selectedId, () => {
   onChange()
 })
 
+let offProgress, offDirSize
 onMounted(async () => {
   await loadServers()
   await loadPresets()
   await loadDir()
-  events.on('file:progress', onProgress)
-  events.on('file:dirsize', onDirSizeEvent)
+  offProgress = events.on('file:progress', onProgress)
+  offDirSize = events.on('file:dirsize', onDirSizeEvent)
 })
 
 onBeforeUnmount(() => {
-  events.off('file:progress', onProgress)
-  events.off('file:dirsize', onDirSizeEvent)
+  offProgress?.()
+  offDirSize?.()
 })
 </script>
 
@@ -582,9 +584,7 @@ onBeforeUnmount(() => {
   <div class="page-container">
     <!-- 功能条：服务器 / 路径 / 上级 -->
     <div class="top-bar">
-      <el-select v-model="selectedId" placeholder="选择服务器" class="server-select">
-        <el-option v-for="s in servers" :key="s.id" :label="`${s.name} (${s.host})`" :value="s.id" />
-      </el-select>
+      <GroupedServerSelect v-model="selectedId" placeholder="选择服务器" class="server-select" :servers="servers" />
 
       <el-input
         v-model="pathInput"

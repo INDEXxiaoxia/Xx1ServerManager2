@@ -59,6 +59,14 @@ func (c *Client) Connect() error {
 }
 
 // Close 关闭连接
+// InterruptTransport interrupts in-flight I/O without mutating connection fields.
+// Caller must serialize this with Close and only invoke it after Connect.
+func (c *Client) InterruptTransport() {
+	if c.client != nil {
+		_ = c.client.Close()
+	}
+}
+
 func (c *Client) Close() {
 	if c.sftp != nil {
 		c.sftp.Close()
@@ -106,6 +114,39 @@ func (c *Client) session(timeout int) (*ssh.Session, error) {
 
 // ExecCommand 执行命令，返回(退出码, 标准输出, 错误输出)
 func (c *Client) ExecCommand(command string, timeout int, useSudo bool) (int, string, string) {
+	return c.execCommand(command, timeout, useSudo, 0)
+}
+func (c *Client) ExecCommandLimited(command string, timeout int, useSudo bool) (int, string, string) {
+	return c.execCommand(command, timeout, useSudo, 256*1024)
+}
+
+type cappedOutput struct {
+	strings.Builder
+	limit     int
+	truncated bool
+}
+
+func (b *cappedOutput) Write(p []byte) (int, error) {
+	n := len(p)
+	if b.limit > 0 && b.Len()+n > b.limit {
+		left := b.limit - b.Len()
+		if left > 0 {
+			b.Builder.Write(p[:left])
+		}
+		b.truncated = true
+	} else {
+		b.Builder.Write(p)
+	}
+	return n, nil
+}
+func (b *cappedOutput) String() string {
+	if b.truncated {
+		return b.Builder.String() + "\n[输出超过 256 KiB，已截断；需要完整输出请重定向到服务器文件]"
+	}
+	return b.Builder.String()
+}
+func (c *Client) execCommand(command string, timeout int, useSudo bool, limit int) (int, string, string) {
+
 	if c.client == nil {
 		return -1, "", "SSH未连接"
 	}
@@ -132,7 +173,7 @@ func (c *Client) ExecCommand(command string, timeout int, useSudo bool) (int, st
 		defer close(done)
 	}
 
-	var stdout, stderr strings.Builder
+	stdout, stderr := cappedOutput{limit: limit}, cappedOutput{limit: limit}
 	sess.Stdout = &stdout
 	sess.Stderr = &stderr
 	if err := sess.Run(cmd); err != nil {
@@ -676,14 +717,18 @@ func (c *Client) Chmod(path string, mode uint32) error {
 func uploadAll(w io.Writer, lf *os.File, total int64, progress func(transferred, total int64)) error {
 	buf := make([]byte, 32*1024)
 	var transferred int64
+	var lastProgress time.Time
 	for {
 		n, rerr := lf.Read(buf)
 		if n > 0 {
-			if _, werr := w.Write(buf[:n]); werr != nil {
+			if written, werr := w.Write(buf[:n]); werr != nil {
 				return werr
+			} else if written != n {
+				return io.ErrShortWrite
 			}
 			transferred += int64(n)
-			if progress != nil {
+			if progress != nil && (transferred == total || time.Since(lastProgress) >= 100*time.Millisecond) {
+				lastProgress = time.Now()
 				progress(transferred, total)
 			}
 		}
@@ -713,25 +758,34 @@ func (c *Client) uploadWithSudo(sc *sftp.Client, lf *os.File, total int64, remot
 		return err
 	}
 	werr := uploadAll(rf, lf, total, progress)
-	rf.Close()
+	if cerr := rf.Close(); werr == nil {
+		werr = cerr
+	}
 	if werr != nil {
 		_ = sc.Remove(tmp)
 		return werr
 	}
 
+	defer sc.Remove(tmp)
+	info, err := sc.Stat(tmp)
+	if err != nil {
+		return err
+	}
+	if info.Size() != total {
+		return errors.New("上传长度校验失败")
+	}
 	dir := filepath.ToSlash(filepath.Dir(remotePath))
-	cmds := []string{
-		fmt.Sprintf("mkdir -p '%s'", dir),
-		fmt.Sprintf("mv '%s' '%s'", tmp, remotePath),
-		fmt.Sprintf("chmod 644 '%s'", remotePath),
+	stage := fmt.Sprintf("%s.upload-%d.part", remotePath, time.Now().UnixNano())
+	// 先复制到目标文件系统上的临时文件，再原子替换，避免跨文件系统 mv 半途覆盖。
+	script := "set -e; trap " + shellQuote("rm -f -- "+shellQuote(stage)) + " EXIT; " +
+		"mkdir -p -- " + shellQuote(dir) + "; cp -- " + shellQuote(tmp) + " " + shellQuote(stage) + "; " +
+		"if [ -e " + shellQuote(remotePath) + " ]; then chmod --reference=" + shellQuote(remotePath) + " -- " + shellQuote(stage) +
+		"; else chmod 644 -- " + shellQuote(stage) + "; fi; mv -f -- " + shellQuote(stage) + " " + shellQuote(remotePath)
+	code, _, stderr := c.ExecCommand("sh -c "+shellQuote(script), 300, true)
+	if code != 0 {
+		return fmt.Errorf("发布上传文件失败: %s", strings.TrimSpace(stderr))
 	}
-	for _, cmd := range cmds {
-		code, _, stderr := c.ExecCommand(cmd, 60, true)
-		if code != 0 {
-			_, _, _ = c.ExecCommand(fmt.Sprintf("rm -f '%s'", tmp), 30, true)
-			return fmt.Errorf("%s 失败: %s", cmd, strings.TrimSpace(stderr))
-		}
-	}
+
 	return nil
 }
 
@@ -758,15 +812,35 @@ func (c *Client) Upload(localPath, remotePath string, progress func(transferred,
 		_ = sc.MkdirAll(dir)
 	}
 
-	// 先尝试直接上传
-	rf, err := sc.Create(remotePath)
+	// 同目录临时文件完整关闭并校验长度后才替换目标。
+	tmp := fmt.Sprintf("%s.upload-%d.part", remotePath, time.Now().UnixNano())
+	rf, err := sc.Create(tmp)
 	if err == nil {
+		defer sc.Remove(tmp)
 		werr := uploadAll(rf, lf, total, progress)
-		rf.Close()
-		if werr == nil {
+		cerr := rf.Close()
+		if werr != nil {
+			return werr
+		}
+		if cerr != nil {
+			return cerr
+		}
+		info, statErr := sc.Stat(tmp)
+		if statErr != nil {
+			return statErr
+		}
+		if info.Size() != total {
+			return fmt.Errorf("上传长度校验失败")
+		}
+		if old, e := sc.Stat(remotePath); e == nil {
+			if e = sc.Chmod(tmp, old.Mode()); e != nil {
+				return e
+			}
+		}
+		if e := sc.PosixRename(tmp, remotePath); e == nil {
 			return nil
 		}
-		_ = sc.Remove(remotePath)
+		return sc.Rename(tmp, remotePath)
 	}
 
 	// 失败（常见 permission denied），非 root 用户回退 sudo 上传
@@ -1217,6 +1291,12 @@ func (c *Client) GetServiceStatus(name string) string {
 
 // OpenShell 打开交互式 shell 会话，返回会话、标准输入写入端、合并输出读取端
 func (c *Client) OpenShell(cols, rows int) (*ssh.Session, io.WriteCloser, io.ReadCloser, error) {
+	return c.OpenPTYCommand(cols, rows, "")
+}
+
+// OpenPTYCommand starts a dedicated PTY command, without falling back to a host shell.
+func (c *Client) OpenPTYCommand(cols, rows int, command string) (*ssh.Session, io.WriteCloser, io.ReadCloser, error) {
+
 	if c.client == nil {
 		return nil, nil, nil, errors.New("SSH未连接")
 	}
@@ -1249,10 +1329,17 @@ func (c *Client) OpenShell(cols, rows int) (*ssh.Session, io.WriteCloser, io.Rea
 		sess.Close()
 		return nil, nil, nil, err
 	}
-	if err := sess.Shell(); err != nil {
+	var startErr error
+	if command == "" {
+		startErr = sess.Shell()
+	} else {
+		startErr = sess.Start(command)
+	}
+	if startErr != nil {
 		pw.Close()
 		sess.Close()
-		return nil, nil, nil, err
+		return nil, nil, nil, startErr
 	}
+	go func() { _ = sess.Wait(); _ = pw.Close() }()
 	return sess, stdin, pr, nil
 }

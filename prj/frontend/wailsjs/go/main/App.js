@@ -38,6 +38,10 @@ export function CancelDiskAnalysis(arg1) {
   return window['go']['main']['App']['CancelDiskAnalysis'](arg1);
 }
 
+export function CancelFileTransfer(arg1) {
+  return window['go']['main']['App']['CancelFileTransfer'](arg1);
+}
+
 export function ChangeMasterPassword(arg1, arg2) {
   return window['go']['main']['App']['ChangeMasterPassword'](arg1, arg2);
 }
@@ -290,6 +294,10 @@ export function TerminalOpen(arg1, arg2, arg3) {
   return window['go']['main']['App']['TerminalOpen'](arg1, arg2, arg3);
 }
 
+export function TerminalOpenContainer(arg1, arg2, arg3, arg4, arg5, arg6) {
+  return window['go']['main']['App']['TerminalOpenContainer'](arg1, arg2, arg3, arg4, arg5, arg6);
+}
+
 export function TerminalResize(arg1, arg2, arg3) {
   return window['go']['main']['App']['TerminalResize'](arg1, arg2, arg3);
 }
@@ -316,6 +324,10 @@ export function TestStoredServer(arg1) {
 
 export function UnlockWithoutPassword() {
   return window['go']['main']['App']['UnlockWithoutPassword']();
+}
+
+export function UploadFileTask(arg1, arg2, arg3, arg4) {
+  return window['go']['main']['App']['UploadFileTask'](arg1, arg2, arg3, arg4);
 }
 
 export function UploadToServer(arg1, arg2, arg3) {

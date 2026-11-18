@@ -403,6 +403,10 @@ func (a *App) AIChat(req models.AIRequest) (models.AIResponse, error) {
 // 也用于建议模式下用户点「执行这条」。
 // 执行结果会记进会话历史，所以下一条消息里 AI 知道"刚才那条命令跑出了什么"。
 func (a *App) AIExecOne(termID, sessionID, command string) (models.AIExecResult, error) {
+	if !a.aiExecutionMu.TryLock() {
+		return models.AIExecResult{}, errors.New("已有 AI 执行任务，请等待结束")
+	}
+	defer a.aiExecutionMu.Unlock()
 	ts := a.getTerminal(termID)
 	if ts == nil {
 		return models.AIExecResult{}, errors.New("终端会话不存在（可能已关闭）")
@@ -462,6 +466,9 @@ func (a *App) AIStartTakeover(req models.AIRequest) (string, error) {
 	// 同一个 sessionID 会命中已有会话（同一段对话里继续提问/追加任务）。此时必须把状态复位：
 	// 上一次 stop() 留下的 cancelled=true 不清掉的话，新的循环会刚起步就退出。
 	// round 归零 = 重新拿到 maxRounds 轮预算（"已达上限"之后追加任务可以接着跑）。
+	if !a.aiExecutionMu.TryLock() {
+		return "", errors.New("已有 AI 执行任务，请等待结束")
+	}
 	s := a.ensureAISession(req.SessionID, req.TermID, sv.ID, sv.Name, "takeover", maxRounds, "")
 	s.mu.Lock()
 	s.mode = "takeover"
@@ -480,7 +487,7 @@ func (a *App) AIStartTakeover(req models.AIRequest) (string, error) {
 	}
 	s.appendUserTask(req.Text)
 
-	go a.runTakeover(s)
+	go func() { defer a.aiExecutionMu.Unlock(); a.runTakeover(s) }()
 	return s.id, nil
 }
 

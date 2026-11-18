@@ -3,6 +3,7 @@ package main
 import (
 	"errors"
 	"io"
+	"regexp"
 	"strings"
 	"sync"
 
@@ -97,6 +98,31 @@ func (t *terminalTail) end() int64 {
 
 // TerminalOpen 打开新的 SSH 终端会话
 func (a *App) TerminalOpen(serverID string, cols, rows int) (string, error) {
+	return a.openTerminal(serverID, cols, rows, "", uuid.NewString())
+}
+func containerShellCommand(engine, containerID string) (string, error) {
+	if engine != "docker" && engine != "podman" {
+		return "", errors.New("不支持的容器引擎")
+	}
+	if !regexp.MustCompile(`^[a-fA-F0-9]{12,64}$`).MatchString(containerID) {
+		return "", errors.New("无效的容器 ID")
+	}
+	return engine + " exec -it " + containerID + " /bin/sh", nil
+}
+
+// TerminalOpenContainer uses a caller-generated session ID so output is subscribed before startup.
+func (a *App) TerminalOpenContainer(serverID, engine, containerID, sessionID string, cols, rows int) (string, error) {
+	command, err := containerShellCommand(engine, containerID)
+	if err != nil {
+		return "", err
+	}
+	if _, err := uuid.Parse(sessionID); err != nil {
+		return "", errors.New("无效的终端会话 ID")
+	}
+	return a.openTerminal(serverID, cols, rows, command, sessionID)
+}
+func (a *App) openTerminal(serverID string, cols, rows int, command, id string) (string, error) {
+
 	sv, err := a.getServerWithPassword(serverID)
 	if err != nil {
 		return "", err
@@ -105,19 +131,24 @@ func (a *App) TerminalOpen(serverID string, cols, rows int) (string, error) {
 	if err := c.Connect(); err != nil {
 		return "", err
 	}
-	sess, stdin, out, err := c.OpenShell(cols, rows)
+	sess, stdin, out, err := c.OpenPTYCommand(cols, rows, command)
 	if err != nil {
 		c.Close()
 		return "", err
 	}
 
-	id := uuid.NewString()
 	ts := &TerminalSession{
 		ID: id, ServerID: serverID, client: c, sess: sess, stdin: stdin, out: out,
 		tail: newTerminalTail(),
 	}
 
 	a.terminalMu.Lock()
+	if _, exists := a.terminals[id]; exists {
+		a.terminalMu.Unlock()
+		sess.Close()
+		c.Close()
+		return "", errors.New("终端会话 ID 已存在")
+	}
 	a.terminals[id] = ts
 	a.terminalMu.Unlock()
 
@@ -135,6 +166,9 @@ func (a *App) TerminalOpen(serverID string, cols, rows int) (string, error) {
 				break
 			}
 		}
+		ts.mu.Lock()
+		ts.closed = true
+		ts.mu.Unlock()
 		runtime.EventsEmit(a.ctx, "terminal:close:"+id, map[string]any{"id": id})
 	}()
 

@@ -1,4 +1,5 @@
 <script setup>
+import GroupedServerSelect from "@/components/GroupedServerSelect.vue"
 import {ref, computed, watch, onMounted, onActivated, onDeactivated, onBeforeUnmount, nextTick} from 'vue'
 import {useRoute} from 'vue-router'
 import {ElMessage} from 'element-plus'
@@ -20,7 +21,14 @@ const activeKey = ref('')
 const terms = new Map()      // key -> xterm instance
 const fitAddons = new Map()  // key -> fit addon
 const dialogVisible = ref(false)
-const selectedServer = ref('')
+const selectedServer = ref(localStorage.getItem('xx1.terminal.server') || '')
+watch(selectedServer, id => localStorage.setItem('xx1.terminal.server', id || ''))
+const terminalZoom = ref(100)
+function zoomTerminal(delta) {
+  terminalZoom.value = Math.max(50, Math.min(200, terminalZoom.value + delta))
+  for (const term of terms.values()) term.options.fontSize = 13 * terminalZoom.value / 100
+  nextTick(refitAll)
+}
 const tabsRef = ref(null)
 
 // 右侧面板：像编辑器的侧边栏一样，用「页签」表示当前展开哪一块。
@@ -53,7 +61,7 @@ const takeoverFull = computed(() => !!takeover.value.full)
 const tkArmed = computed(() => takeover.value.mode === 'takeover' && !takeoverFull.value)
 const overlayVisible = computed(() => takeoverFull.value || tkArmed.value)
 // 键盘/粘贴是否被接管收回（暂停等输入时会放行）
-const inputLocked = computed(() => !!takeover.value.locked)
+const inputLocked = computed(() => !!takeover.value.lockedKeys?.includes(activeKey.value))
 
 // ---- 开大动画：中央打字机提示 ----
 const CAST_MAIN = 'AI 接管已启动'
@@ -103,7 +111,7 @@ function onTakeoverUpdate(st) {
   if (!next.full && wasFull) {
     clearCastTimers()
     castPlaying.value = false
-    ElMessage.success('AI 接管已结束，终端已恢复可操作')
+    if (!next.busyKeys?.length) ElMessage.success('AI 接管已结束，终端已恢复可操作')
   }
 }
 
@@ -158,16 +166,29 @@ async function loadServers() {
   servers.value = await api.listServers()
 }
 
-async function openNew(serverId) {
+async function openRouteTerminal() {
+  const sid = route.query.serverId
+  if (!sid || !servers.value.some(s => s.id === sid)) { addTab(); return }
+  const containerId = route.query.containerId
+  const engine = route.query.engine
+  if (containerId) {
+    if (!/^[a-fA-F0-9]{12,64}$/.test(containerId) || !['docker','podman'].includes(engine)) {
+      ElMessage.error('容器终端参数无效'); return
+    }
+    await openNew(sid, {id: containerId, engine, name: String(route.query.containerName || containerId.slice(0,12))})
+  } else await openNew(sid)
+}
+async function openNew(serverId, container = null) {
   const sv = servers.value.find(s => s.id === serverId)
   if (!sv) return
   const key = 't' + Date.now() + Math.random().toString(36).slice(2, 6)
-  tabs.value.push({key, serverId, serverName: sv.name, title: sv.name, connected: true})
+  if (container) syncMode.value = false
+  tabs.value.push({key, serverId, serverName: sv.name, title: container ? `${container.name} · ${sv.name}` : sv.name, container, connected: true})
   activeKey.value = key
   closeMenu()
   await nextTick()
   if (syncMode.value) await nextTick() // 网格模式下列宽变化，等布局稳定再初始化
-  initTerminal(key)
+  await initTerminal(key)
   // 新标签可能把标签栏撑到可视区外，滚动到可见位置
   const el = document.getElementById('tab-' + key)
   if (el && el.scrollIntoView) el.scrollIntoView({block: 'nearest', inline: 'nearest'})
@@ -181,7 +202,7 @@ async function initTerminal(key) {
   const el = document.getElementById('term-' + key)
   if (!el) return
   const term = new Terminal({
-    fontSize: 13,
+    fontSize: 13 * terminalZoom.value / 100,
     fontFamily: 'Cascadia Code, Consolas, monospace',
     cursorBlink: true,
     // 同步网格里格子较小，光标改成实心块更醒目，方便确认"输入到底进了哪个窗口"
@@ -214,27 +235,43 @@ async function initTerminal(key) {
 
   const cols = term.cols
   const rows = term.rows
-  const termId = await api.terminalOpen(tab.serverId, cols, rows)
+  let termId
+  try {
+    termId = tab.container ? crypto.randomUUID() : await api.terminalOpen(tab.serverId, cols, rows)
+  } catch(e) {
+    tab.connected = false; term.writeln('\r\n连接失败：' + e); return
+  }
+  if (!tabs.value.some(t => t.key === key)) { if (!tab.container) ignoreSessionError(api.terminalClose(termId)); return }
   tab.termId = termId
 
   // 输出 -> 终端
   // 写完必须把视口钉到底部：xterm 的 scrollOnUserInput 只在"键盘输入"时回到底部，
   // 而同步模式下其他窗口的输出是被动写进来的，视口会停在原处、新行被顶上去，
   // 表现为"最后一行（提示符）不出现，按一下回车才出来"。
-  events.on('terminal:data:' + termId, (data) => {
+  tab._offData = events.on('terminal:data:' + termId, (data) => {
     term.write(data)
     term.scrollToBottom()
   })
-  events.on('terminal:close:' + termId, () => {
+  tab._offClose = events.on('terminal:close:' + termId, () => {
     tab.connected = false
   })
+
+  if (tab.container) {
+    try {
+      await window.go.main.App.TerminalOpenContainer(tab.serverId, tab.container.engine, tab.container.id, termId, cols, rows)
+      if (!tabs.value.some(t => t.key === key)) { ignoreSessionError(api.terminalClose(termId)); return }
+    } catch(e) {
+      tab.connected = false; tab._offData?.(); tab._offClose?.()
+      term.writeln('\r\n无法打开容器终端：' + e); return
+    }
+  }
 
   // 输入 -> 后端；开启同步操作时把输入广播给其他终端。
 // 以键盘真实输入为准：谁在接收键盘事件，谁就是焦点终端（顺带纠正高亮状态）。
   term.onData((data) => {
     // AI 接管中收回键盘：手敲的命令与 AI 注入的命令交错会直接搞乱 shell。
     // 例外：暂停等输入（密码 / y-n 确认 / 退出 vim）时键盘要交还给用户 —— 密码只能自己输。
-    if (inputLocked.value) {
+    if (takeover.value.lockedKeys?.includes(key)) {
       if (!takeoverHintShown) {
         takeoverHintShown = true
         ElMessage.warning('AI 接管中，请勿操作；需要手动介入请先点「停止」')
@@ -268,10 +305,7 @@ async function initTerminal(key) {
 function activateTab(key) {
   if (!key) return
   // 接管中禁止切换终端：AI 的命令只注入被接管的那个终端，切走会让界面与实际执行错位
-  if (takeoverFull.value && key !== activeKey.value) {
-    blockedByTakeover('切换终端')
-    return
-  }
+
   // 幂等：已经在激活态就只确保焦点，不再走一遍流程（避免 focus 事件递归）
   if (activeKey.value !== key) activeKey.value = key
   closeMenu()
@@ -453,8 +487,8 @@ function broadcastInput(fromKey, data) {
 }
 
 async function toggleSync() {
-  if (takeoverFull.value) {
-    blockedByTakeover('开启/关闭同步操作')
+  if (takeover.value.busyKeys?.length) {
+    ElMessage.warning('AI 接管期间不能开启同步操作')
     return
   }
   syncMode.value = !syncMode.value
@@ -712,9 +746,11 @@ function onMenuSelectAll() {
 }
 
 function closeTab(key) {
-  if (blockedByTakeover('关闭终端标签')) return
+  if (takeover.value.busyKeys?.includes(key)) { ElMessage.warning('请先停止此终端的 AI 任务'); return }
   const tab = tabs.value.find(t => t.key === key)
   if (!tab) return
+  tab._offData?.()
+  tab._offClose?.()
   ignoreSessionError(api.terminalClose(tab.termId))
   if (tab._resize) window.removeEventListener('resize', tab._resize)
   const term = terms.get(key)
@@ -730,12 +766,11 @@ function closeTab(key) {
 }
 
 function addTab() {
-  if (blockedByTakeover('新建终端')) return
   if (!servers.value.length) { ElMessage.warning('请先在服务器列表添加服务器'); return }
   if (route.query.serverId && servers.value.some(s => s.id === route.query.serverId)) {
     openNew(route.query.serverId)
   } else {
-    selectedServer.value = ''
+    if (!servers.value.some(s => s.id === selectedServer.value)) selectedServer.value = ''
     dialogVisible.value = true
   }
 }
@@ -774,7 +809,7 @@ onMounted(async () => {
   bindGlobalListeners()
   await loadServers()
   await waitForLayout()
-  addTab()
+  await openRouteTerminal()
   await waitForLayout()
   initializing.value = false
   refitAll()
@@ -793,7 +828,7 @@ onActivated(async () => {
   // onMounted 里的 addTab() 不会重跑，这里补上同样的处理（同一个服务器可以再开一个窗口）
   const sid = route.query.serverId
   if (sid && servers.value.some(s => s.id === sid)) {
-    openNew(sid)
+    await openRouteTerminal()
   } else if (!tabs.value.length) {
     // 离开前把终端全关了再切回来：仍然给出和首次进入一致的引导
     addTab()
@@ -853,15 +888,15 @@ function onGlobalKeydown(ev) {
           :id="'tab-' + t.key"
           :key="t.key"
           class="term-tab"
-          :class="{active: activeKey === t.key, locked: takeoverFull && activeKey !== t.key}"
+          :class="{active: activeKey === t.key, locked: false}"
           @click="activateTab(t.key)"
         >
           <span class="tab-title">{{ t.title }}</span>
           <el-icon v-if="t.connected === false" class="tab-off" title="会话已断开"><WarningFilled /></el-icon>
-          <el-icon class="tab-close" :class="{disabled: takeoverFull}" @click.stop="closeTab(t.key)"><Close /></el-icon>
+          <el-icon class="tab-close" :class="{disabled: takeover.busyKeys?.includes(t.key)}" @click.stop="closeTab(t.key)"><Close /></el-icon>
         </div>
-        <el-tooltip :content="takeoverFull ? 'AI 接管中，无法新建终端' : '新建终端'" placement="bottom">
-          <button class="tab-add" :class="{disabled: takeoverFull}" @click="addTab">
+        <el-tooltip content="新建终端" placement="bottom">
+          <button class="tab-add" @click="addTab">
             <el-icon><Plus /></el-icon>
           </button>
         </el-tooltip>
@@ -871,6 +906,11 @@ function onGlobalKeydown(ev) {
     <div class="term-main">
       <!-- 终端区域：单窗口叠层 或 同步 2×2 网格 -->
       <div class="term-body" :class="{sync: syncMode, takeover: takeoverFull}">
+        <div v-if="tabs.length" class="terminal-zoom" role="group" aria-label="终端缩放" @mousedown.stop @click.stop>
+          <button type="button" aria-label="缩小终端字体" title="缩小终端字体" @click="zoomTerminal(-10)" :disabled="terminalZoom <= 50">−</button>
+          <span aria-live="polite">{{ terminalZoom }}%</span>
+          <button type="button" aria-label="放大终端字体" title="放大终端字体" @click="zoomTerminal(10)" :disabled="terminalZoom >= 200">+</button>
+        </div>
         <!-- AI 接管的视觉提示：纯覆盖层（pointer-events 默认穿透），
              不占布局、不改变终端尺寸，因此不需要重新 fit。 -->
         <div v-if="overlayVisible" class="tk-overlay" :class="{armed: tkArmed, active: takeoverFull, paused: takeover.paused}">
@@ -1027,9 +1067,7 @@ function onGlobalKeydown(ev) {
       append-to-body
       @closed="closeMenu"
     >
-      <el-select v-model="selectedServer" placeholder="选择服务器" style="width: 100%">
-        <el-option v-for="s in servers" :key="s.id" :label="`${s.name} (${s.host})`" :value="s.id" />
-      </el-select>
+      <GroupedServerSelect v-model="selectedServer" placeholder="选择服务器" style="width: 100%" :servers="servers" />
       <template #footer>
         <el-button @click="dialogVisible = false">取消</el-button>
         <el-button type="primary" @click="confirmAdd">连接</el-button>
@@ -1151,6 +1189,47 @@ function onGlobalKeydown(ev) {
   position: relative;
   min-height: 0;
 }
+/* 悬浮在终端内部，不参与布局；配色跟随终端而非浅色页面按钮。 */
+.terminal-zoom {
+  position: absolute;
+  top: 8px;
+  right: 18px;
+  z-index: 7;
+  display: inline-flex;
+  align-items: center;
+  height: 26px;
+  padding: 2px;
+  border: 1px solid color-mix(in srgb, var(--terminal-fg) 24%, transparent);
+  border-radius: 7px;
+  background: var(--terminal-bg);
+  color: var(--terminal-fg);
+  box-shadow: 0 2px 8px #0003;
+  font: 11px/1 Consolas, monospace;
+  user-select: none;
+}
+.terminal-zoom span { min-width: 40px; text-align: center; font-variant-numeric: tabular-nums; }
+.terminal-zoom button {
+  display: grid;
+  place-items: center;
+  width: 22px;
+  height: 20px;
+  padding: 0;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: inherit;
+  font: 15px/1 Consolas, monospace;
+  cursor: pointer;
+}
+.terminal-zoom button:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--terminal-accent) 22%, var(--terminal-bg));
+  color: var(--terminal-fg);
+}
+.terminal-zoom button:focus-visible { outline: 2px solid var(--terminal-accent); outline-offset: 1px; }
+.terminal-zoom button:disabled { opacity: .35; cursor: default; }
+/* 接管状态与停止按钮留在缩放控件左侧，避免互相遮挡。 */
+.term-body.takeover .tk-badge { right: 122px; }
+
 /* AI 完全接管：贴边内发光（见 .tk-glow + .tk-svg），全部是覆盖层，
    不改终端尺寸、不影响页面结构。这一圈细边是"基准线"：即使动画被禁用也一眼能看出。 */
 .term-body.takeover {

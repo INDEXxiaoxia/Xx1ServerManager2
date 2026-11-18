@@ -1,4 +1,5 @@
 <script setup>
+import GroupedServerSelect from "@/components/GroupedServerSelect.vue"
 import {ref, computed, onMounted, onActivated} from 'vue'
 import {useRoute, useRouter} from 'vue-router'
 import {ElMessage} from 'element-plus'
@@ -175,16 +176,7 @@ onActivated(async () => {
         <span class="text-muted ops-tool-sub">{{ activeToolMeta.desc }}</span>
         <div class="ops-toolbar-right">
           <span class="ops-label">服务器</span>
-          <el-select
-            v-model="serverId"
-            placeholder="选择要排查的服务器"
-            style="width: 240px"
-            filterable
-            size="default"
-            @change="onServerChange"
-          >
-            <el-option v-for="s in servers" :key="s.id" :label="`${s.name} (${s.host})`" :value="s.id" />
-          </el-select>
+          <GroupedServerSelect v-model="serverId" :servers="servers" style="width:260px" @change="onServerChange" />
           <span v-if="currentServer" class="text-muted mono ops-host">{{ currentServer.username }}@{{ currentServer.host }}</span>
         </div>
       </div>

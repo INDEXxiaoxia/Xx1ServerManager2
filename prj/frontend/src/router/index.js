@@ -7,6 +7,7 @@ const routes = [
     component: Layout,
     redirect: '/dashboard',
     children: [
+      {path: 'containers', name: 'Containers', component: () => import('@/views/containers/Index.vue'), meta: {title: '容器管理'}},
       {path: 'dashboard', name: 'Dashboard', component: () => import('@/views/dashboard/Index.vue'), meta: {title: '总览'}},
       {path: 'servers', name: 'ServerList', component: () => import('@/views/servers/List.vue'), meta: {title: '服务器列表'}},
       {path: 'monitor', name: 'Monitor', component: () => import('@/views/servers/Monitor.vue'), meta: {title: '实时监控'}},

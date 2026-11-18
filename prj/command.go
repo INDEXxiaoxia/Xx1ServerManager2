@@ -45,6 +45,7 @@ func (a *App) StartBatchCommand(serverIDs []string, command string, timeout int)
 		for _, sid := range serverIDs {
 			sv, err := a.getServerWithPassword(sid)
 			if err != nil {
+				a.emitCommand(sessionID, commandTask{ServerID: sid, ServerName: sid}, command, "failed", -1, "", "", 0, err.Error())
 				continue
 			}
 			tasksList = append(tasksList, commandTask{ServerID: sid, ServerName: sv.Name})
@@ -73,7 +74,7 @@ func (a *App) doCommand(sessionID string, t commandTask, command string, timeout
 	defer c.Close()
 
 	start := time.Now()
-	exitCode, stdout, stderr := c.ExecCommand(command, timeout, true)
+	exitCode, stdout, stderr := c.ExecCommandLimited(command, timeout, true)
 	duration := time.Since(start).Milliseconds()
 	status := models.TaskSuccess
 	if exitCode != 0 {

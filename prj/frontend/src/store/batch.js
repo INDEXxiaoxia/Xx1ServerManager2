@@ -21,6 +21,10 @@ export const useBatchStore = defineStore('batch', {
     executeCommand: '',       // 命令内容也保留，便于切页返回后继续编辑
     executeTimeout: 30,
 
+    pendingUpload: false,
+    earlyUpload: [],
+    pendingExecute: false,
+    earlyExecute: [],
     bound: false
   }),
 
@@ -54,32 +58,52 @@ export const useBatchStore = defineStore('batch', {
     },
 
     // ---- 上传 ----
+    beginUpload() { this.uploadRunning = true; this.pendingUpload = true; this.earlyUpload = [] },
     setUploadSession(sessionId) {
       this.uploadSessionId = sessionId
       this.uploadRunning = !!sessionId
       this.uploadTasks = {}
+      this.pendingUpload = false
+      const buffered = this.earlyUpload; this.earlyUpload = []
+      for (const e of buffered) { if (e.output) this.applyUploadProgress(e.output); else this.finishUpload(e.sessionId) }
     },
     applyUploadProgress(data) {
+      if (this.pendingUpload) { this.earlyUpload.push({output:data}); return }
       if (this.uploadSessionId && data.sessionId && data.sessionId !== this.uploadSessionId) return
       const key = data.taskId || (data.serverId + '|' + data.localPath)
       this.uploadTasks[key] = {...(this.uploadTasks[key] || {}), ...data}
     },
     finishUpload(sessionId) {
+      if (this.pendingUpload) { this.earlyUpload.push({sessionId}); return }
       if (sessionId && this.uploadSessionId && sessionId !== this.uploadSessionId) return
       this.uploadRunning = false
     },
 
     // ---- 执行 ----
+    beginExecute() {
+      this.executeRunning = true
+      this.pendingExecute = true
+      this.earlyExecute = []
+    },
     setExecuteSession(sessionId) {
       this.executeSessionId = sessionId
       this.executeRunning = !!sessionId
       this.executeOutputs = {}
+      this.pendingExecute = false
+      const buffered = this.earlyExecute
+      this.earlyExecute = []
+      for (const event of buffered) {
+        if (event.output) this.applyCommandOutput(event.output)
+        else this.finishExecute(event.sessionId)
+      }
     },
     applyCommandOutput(data) {
+      if (this.pendingExecute) { this.earlyExecute.push({output: data}); return }
       if (this.executeSessionId && data.sessionId && data.sessionId !== this.executeSessionId) return
       this.executeOutputs[data.serverId] = data
     },
     finishExecute(sessionId) {
+      if (this.pendingExecute) { this.earlyExecute.push({sessionId}); return }
       if (sessionId && this.executeSessionId && sessionId !== this.executeSessionId) return
       this.executeRunning = false
     },

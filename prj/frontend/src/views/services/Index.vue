@@ -1,12 +1,14 @@
 <script setup>
-import {ref, onMounted} from 'vue'
+import GroupedServerSelect from "@/components/GroupedServerSelect.vue"
+import {ref, watch, onMounted} from 'vue'
 import {useRoute} from 'vue-router'
 import {ElMessage, ElMessageBox} from 'element-plus'
 import {api} from '@/api'
 
 const route = useRoute()
 const servers = ref([])
-const selectedId = ref(route.query.serverId || '')
+const selectedId = ref(route.query.serverId || localStorage.getItem('xx1.server.services/Index.vue') || '')
+watch(selectedId, id => localStorage.setItem('xx1.server.services/Index.vue', id || ''))
 const services = ref([])
 const loading = ref(false)
 const keyword = ref('')
@@ -23,7 +25,7 @@ const filtered = () => {
 
 async function loadServers() {
   servers.value = await api.listServers()
-  if (!selectedId.value && servers.value.length) selectedId.value = servers.value[0].id
+  if (!servers.value.some(s => s.id === selectedId.value) && servers.value.length) selectedId.value = servers.value[0].id
 }
 
 async function loadServices() {
@@ -80,9 +82,7 @@ onMounted(async () => {
     <div class="card mb-12">
       <div class="flex-between">
         <div class="flex-between" style="gap: 12px">
-          <el-select v-model="selectedId" placeholder="选择服务器" @change="onChange" style="width: 240px">
-            <el-option v-for="s in servers" :key="s.id" :label="`${s.name} (${s.host})`" :value="s.id" />
-          </el-select>
+          <GroupedServerSelect v-model="selectedId" placeholder="选择服务器" @change="onChange" style="width: 240px" :servers="servers" />
           <el-input v-model="keyword" placeholder="搜索服务" clearable style="width: 220px" />
         </div>
         <el-button :loading="loading" @click="loadServices">刷新</el-button>

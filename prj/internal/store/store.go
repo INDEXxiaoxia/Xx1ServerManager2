@@ -543,7 +543,7 @@ func (s *Store) GetCommandHistory(limit int) ([]models.CommandHistory, error) {
 		limit = 100
 	}
 	rows, err := s.db.Query(
-		`SELECT id,server_id,server_name,command,status,exit_code,stdout,stderr,duration,created_at,COALESCE(source,''),COALESCE(ai_session_id,'') FROM command_history ORDER BY id DESC LIMIT ?`,
+		`SELECT id,server_id,server_name,command,status,exit_code,substr(stdout,1,262144),substr(stderr,1,262144),duration,created_at,COALESCE(source,''),COALESCE(ai_session_id,'') FROM command_history ORDER BY id DESC LIMIT ?`,
 		limit,
 	)
 	if err != nil {

@@ -47,9 +47,11 @@ function usePreset(p) {
 }
 
 async function start() {
+  if (store.executeRunning) return
   if (!selectedServers.value.length) { ElMessage.warning('请选择服务器'); return }
   if (!command.value.trim()) { ElMessage.warning('请输入命令'); return }
   try {
+    store.beginExecute()
     const sid = await api.startBatchCommand(
       selectedServers.value.map(s => s.id),
       command.value,
@@ -58,6 +60,9 @@ async function start() {
     store.setExecuteSession(sid)
     ElMessage.success('命令已下发')
   } catch (e) {
+    store.pendingExecute = false
+    store.executeRunning = false
+    store.earlyExecute = []
     ElMessage.error('启动失败：' + e)
   }
 }

@@ -79,7 +79,8 @@ const locked = computed(() => {
   return !(st && st.state === 'paused' && (st.kind === 'input' || st.kind === 'altscreen'))
 })
 const takeoverActive = computed(() => !!(chat.value.takeoverFull && chat.value.takeoverState))
-const canSend = computed(() => canUse.value && aiReady.value && !props.sync && !chat.value.takeoverFull && !!input.value.trim())
+const anyTakeover = computed(() => Object.values(chats).some(c => c.takeoverFull))
+const canSend = computed(() => !running.value && !anyTakeover.value && canUse.value && aiReady.value && !props.sync && !chat.value.takeoverFull && !!input.value.trim())
 const ctxSizeText = computed(() => {
   const c = chat.value.lastContext
   if (!c) return ''
@@ -131,25 +132,26 @@ function newSid() {
   return 'ai-' + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 8)
 }
 
-let offs = []
-function unsubscribeAll() {
-  offs.forEach(f => {
-    try { f() } catch (e) { /* 忽略 */ }
-  })
-  offs = []
+const subscriptions = new Map()
+function unsubscribeChat(owner) {
+  for (const [sid, sub] of subscriptions) {
+    if (!owner || sub.owner === owner) { sub.offs.forEach(off => off()); subscriptions.delete(sid) }
+  }
 }
+function unsubscribeAll() { unsubscribeChat() }
 // 先订阅再发起：AI 失败往往很快（Key 错、模型名错），
 // 等 IPC 返回再订阅会漏掉首个状态事件，界面会一直停在"执行中"
-function subscribe(sid) {
-  unsubscribeAll()
-  if (!sid) return
-  offs.push(events.on('ai:state:' + sid, onAIState))
-  offs.push(events.on('ai:step:' + sid, onAIStep))
+function subscribe(sid, owner = chat.value) {
+  if (!sid || subscriptions.has(sid)) return
+  subscriptions.set(sid, {owner, offs: [
+    events.on('ai:state:' + sid, st => onAIState(st, owner)),
+    events.on('ai:step:' + sid, step => onAIStep(step, owner))
+  ]})
 }
 
-function onAIState(st) {
+function onAIState(st, c) {
+  const push = item => { c.messages.push(item); scrollToBottom() }
   if (!st) return
-  const c = chat.value
   c.takeoverState = st
   if (st.message && ['paused', 'error', 'maxrounds', 'done', 'stopped'].includes(st.state)) {
     push({kind: 'note', state: st.state, text: st.message})
@@ -158,7 +160,8 @@ function onAIState(st) {
   emitTakeover()
 }
 
-function onAIStep(step) {
+function onAIStep(step, c) {
+  const push = item => { c.messages.push(item); scrollToBottom() }
   if (!step) return
   if (!step.result) {
     push({kind: 'cmd', command: step.command, risk: step.risk, thought: step.thought, round: step.round})
@@ -172,6 +175,8 @@ function emitTakeover() {
   const st = c.takeoverState
   emit('update:takeover', {
     active: c.takeoverFull || running.value,
+    busyKeys: Object.keys(chats).filter(k => chats[k].takeoverFull || chats[k].pending),
+    lockedKeys: Object.keys(chats).filter(k => { const c = chats[k]; const st = c.takeoverState; return (c.pending && c.pendingMode === 'exec' && !c.takeoverFull) || c.takeoverFull && !(st?.state === 'paused' && ['input', 'altscreen'].includes(st.kind)) }),
     full: !!c.takeoverFull,
     paused: !!(st && st.state === 'paused'),
     kind: (st && st.kind) || '',
@@ -194,12 +199,13 @@ watch(termKey, () => {
 watch(() => (props.terminals || []).map(t => t.key).join('|'), () => {
   const alive = new Set((props.terminals || []).map(t => t.key))
   Object.keys(chats).forEach(k => {
-    if (!alive.has(k)) delete chats[k]
+    if (!alive.has(k)) { unsubscribeChat(chats[k]); delete chats[k] }
   })
 })
 
 // ---- 模式切换：切到有风险的模式当场确认，而不是等到发送时 ----
 async function setMode(v) {
+  if (anyTakeover.value || running.value) return
   if (v === mode.value) return
   if (chat.value.takeoverFull) {
     ElMessage.warning('AI 接管进行中，无法切换模式（先点停止）')
@@ -263,6 +269,7 @@ function buildReq(text, m, sid) {
 }
 
 function guard() {
+  if (running.value || anyTakeover.value) { ElMessage.warning('另一个 AI 请求或接管任务正在运行，请等待完成'); return false }
   if (!canUse.value) { ElMessage.warning('请先打开一个终端'); return false }
   if (!aiReady.value) { ElMessage.warning('还没有配置 AI：设置 → AI 设置'); return false }
   if (props.sync) { ElMessage.warning('并行（同步）模式下不支持 AI：请先关闭「同步操作」'); return false }
@@ -271,59 +278,69 @@ function guard() {
 }
 
 async function send() {
+  const targetChat = chat.value
+  const targetTerm = termId.value
+  const requestMode = mode.value
+  const push = item => { targetChat.messages.push(item); scrollToBottom() }
   const text = input.value.trim()
   if (!text || !guard()) return
   push({kind: 'user', text})
   input.value = ''
   nextTick(autoGrow)
   running.value = true
+  targetChat.pending = true
+  targetChat.pendingMode = requestMode
   busyText.value = mode.value === 'takeover' ? 'AI 正在规划下一步…' : 'AI 正在思考…'
   // 会话默认带上下文：沿用同一段会话（没有才新建）；只有「重置对话」会换新的
-  const sid = chat.value.sessionId || (chat.value.sessionId = newSid())
+  const sid = targetChat.sessionId || (targetChat.sessionId = newSid())
   subscribe(sid)
   emitTakeover()
 
   try {
     if (mode.value === 'takeover') {
-      chat.value.takeoverFull = true
+      targetChat.takeoverFull = true
+      targetChat.takeoverState = {state: 'running', kind: '', round: 0, maxRounds: 0, message: 'AI 接管中'}
+      emitTakeover()
       await api.aiStartTakeover(buildReq(text, 'takeover', sid))
-      chat.value.takeoverState = {state: 'running', kind: '', round: 0, maxRounds: 0, message: 'AI 接管中'}
     } else {
       const resp = await api.aiChat(buildReq(text, mode.value, sid))
-      chat.value.sessionId = resp.sessionId || sid
-      chat.value.lastContext = resp.context || null
+      targetChat.sessionId = resp.sessionId || sid
+      targetChat.lastContext = resp.context || null
       push({kind: 'ai', text: resp.text || '（模型没有给出文字说明）'})
       const cmds = resp.commands || []
       if (!cmds.length) push({kind: 'note', state: 'info', text: '这次没有给出可执行的命令'})
       for (const c of cmds) push({kind: 'cmd', command: c.command, risk: c.risk, reason: c.reason})
-      if (mode.value === 'exec' && cmds.length) await execCommand(cmds[0].command)
+      if (requestMode === 'exec' && cmds.length) await execCommand(cmds[0].command, targetChat, targetTerm)
     }
   } catch (e) {
     push({kind: 'err', text: 'AI 调用失败：' + e})
-    chat.value.takeoverFull = false
-    chat.value.takeoverState = null
+    targetChat.takeoverFull = false
+    targetChat.takeoverState = null
   } finally {
+    targetChat.pending = false
     running.value = false
     busyText.value = ''
     emitTakeover()
   }
 }
 
-async function execCommand(command) {
-  if (!termId.value) { ElMessage.warning('请先打开一个终端'); return }
-  const sid = chat.value.sessionId || (chat.value.sessionId = newSid())
-  subscribe(sid)
-  chat.value.takeoverFull = true
-  chat.value.takeoverState = {state: 'running', kind: '', round: 1, maxRounds: 1, message: '正在执行一条命令'}
+async function execCommand(command, owner = chat.value, targetTerm = termId.value) {
+  if (anyTakeover.value) return
+  const push = item => { owner.messages.push(item); scrollToBottom() }
+  if (!targetTerm) { ElMessage.warning('请先打开一个终端'); return }
+  const sid = owner.sessionId || (owner.sessionId = newSid())
+  subscribe(sid, owner)
+  owner.takeoverFull = true
+  owner.takeoverState = {state: 'running', kind: '', round: 1, maxRounds: 1, message: '正在执行一条命令'}
   emitTakeover()
   try {
-    const res = await api.aiExecOne(termId.value, sid, command)
+    const res = await api.aiExecOne(targetTerm, sid, command)
     push({kind: 'res', ...res})
   } catch (e) {
     push({kind: 'err', text: '执行失败：' + e})
   } finally {
-    chat.value.takeoverFull = false
-    chat.value.takeoverState = null
+    owner.takeoverFull = false
+    owner.takeoverState = null
     emitTakeover()
   }
 }
@@ -349,12 +366,13 @@ async function stopTakeover() {
 
 // 重置对话 = 开一段全新会话（后端上下文一起丢掉）
 async function resetChat() {
-  if (chat.value.takeoverFull) { ElMessage.warning('AI 正在接管，先停止再重置'); return }
+  if (running.value || anyTakeover.value) { ElMessage.warning('请等待 AI 任务结束再重置'); return }
+  const key = termKey.value
   try {
     await api.aiReset(termId.value || '')
   } catch (e) { /* 忽略 */ }
-  unsubscribeAll()
-  chats[termKey.value] = blankChat()
+  unsubscribeChat(chats[key])
+  chats[key] = blankChat()
   emitTakeover()
   ElMessage.success('已开始新对话')
 }
@@ -399,6 +417,7 @@ onMounted(() => {
   })
 })
 onBeforeUnmount(() => {
+  unsubscribeAll()
   if (logObserver) {
     logObserver.disconnect()
     logObserver = null
@@ -463,7 +482,7 @@ onActivated(() => {
             <span class="ai-acts">
               <button class="ai-act" @click="copyCmd(m.command)">复制</button>
               <button class="ai-act" @click="insertCmd(m.command)">插入</button>
-              <button class="ai-act primary" :disabled="locked" @click="execCommand(m.command)">执行</button>
+              <button class="ai-act primary" :disabled="locked || running || anyTakeover" @click="execCommand(m.command)">执行</button>
             </span>
           </div>
           <div v-if="m.thought" class="ai-thought">{{ m.thought }}</div>
@@ -500,8 +519,8 @@ onActivated(() => {
     <div class="ai-composer-wrap">
       <div class="ai-tools">
         <!-- 上下文档位：做成纯文字下拉，不带边框与内边距，尽量不占地方 -->
-        <el-dropdown trigger="click" placement="top-start" :disabled="chat.takeoverFull" @command="setCtx">
-          <button class="ai-tool" :disabled="chat.takeoverFull">
+        <el-dropdown trigger="click" placement="top-start" :disabled="anyTakeover || running" @command="setCtx">
+          <button class="ai-tool" :disabled="anyTakeover || running">
             上下文：{{ CTX_LABEL[ctxMode] }}<el-icon class="ai-caret"><ArrowDown /></el-icon>
           </button>
           <template #dropdown>
@@ -528,11 +547,11 @@ onActivated(() => {
           @input="autoGrow"
         />
         <div class="ai-composer-foot">
-          <el-dropdown trigger="click" placement="top-end" :disabled="chat.takeoverFull" @command="setMode">
+          <el-dropdown trigger="click" placement="top-end" :disabled="anyTakeover || running" @command="setMode">
             <button
               class="ai-perm"
               :class="mode"
-              :disabled="chat.takeoverFull"
+              :disabled="anyTakeover || running"
               :title="MODE_TIP[mode]"
             >
               <i class="ai-perm-dot" />{{ MODE_LABEL[mode] }}<el-icon class="ai-caret"><ArrowUp /></el-icon>

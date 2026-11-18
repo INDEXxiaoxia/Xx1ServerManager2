@@ -1,4 +1,5 @@
 <script setup>
+import GroupedServerSelect from "@/components/GroupedServerSelect.vue"
 import {ref, computed, watch, onMounted, onBeforeUnmount, nextTick} from 'vue'
 import * as echarts from 'echarts'
 import {useRoute} from 'vue-router'
@@ -7,7 +8,8 @@ import {themeState, getChartTheme, diskColorOf} from '@/theme'
 
 const route = useRoute()
 const servers = ref([])
-const selectedId = ref(route.query.serverId || '')
+const selectedId = ref(route.query.serverId || localStorage.getItem('xx1.server.servers/Monitor.vue') || '')
+watch(selectedId, id => localStorage.setItem('xx1.server.servers/Monitor.vue', id || ''))
 const loading = ref(false)
 const processes = ref([])
 
@@ -54,7 +56,7 @@ const diskHiddenCount = computed(() =>
 
 async function loadServers() {
   servers.value = await api.listServers()
-  if (!selectedId.value && servers.value.length) selectedId.value = servers.value[0].id
+  if (!servers.value.some(s => s.id === selectedId.value) && servers.value.length) selectedId.value = servers.value[0].id
 }
 
 function initCharts() {
@@ -366,9 +368,7 @@ onBeforeUnmount(() => {
     <div class="card mb-12">
       <div class="flex-between">
         <h3>实时监控</h3>
-        <el-select v-model="selectedId" placeholder="选择服务器" @change="onChange" style="width: 260px">
-          <el-option v-for="s in servers" :key="s.id" :label="`${s.name} (${s.host})`" :value="s.id" />
-        </el-select>
+        <GroupedServerSelect v-model="selectedId" placeholder="选择服务器" @change="onChange" style="width: 260px" :servers="servers" />
       </div>
     </div>
 
