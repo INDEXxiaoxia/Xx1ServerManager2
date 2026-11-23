@@ -26,13 +26,13 @@ func TestHostTerminalDoesNotInheritDockerGrant(t *testing.T) {
 		t.Fatal("container operation lost cached authorization")
 	}
 }
-func TestHostTerminalHonorsExplicitDefaultRoot(t *testing.T) {
+func TestHostTerminalIgnoresOperationDefaultRoot(t *testing.T) {
 	a := newTestApp(t)
 	sv := &models.Server{ID: "server-b", Username: "admin", DefaultRoot: true, SudoPassword: "configured"}
 	a.elevated = map[string]rootGrant{sv.ID: {"temporary", time.Now(), rootIdentity(sv)}}
 	host := a.newTerminalClient(sv, "")
 	root, pw := host.RefreshRoot()
-	if !root || !host.DefaultRoot || pw != "configured" {
+	if root || host.DefaultRoot || pw != "" || host.RequestRoot != nil {
 		t.Fatal("explicit root login configuration was not preserved")
 	}
 }

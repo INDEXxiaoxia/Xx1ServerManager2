@@ -189,7 +189,7 @@ func (c *Client) execCommandOnce(command string, timeout int, useSudo bool, limi
 	}
 	defer sess.Close()
 
-	cmd := c.commandFor(command)
+	cmd := c.commandForOperation(command, useSudo)
 
 	if timeout > 0 {
 		done := make(chan struct{})
@@ -1414,4 +1414,16 @@ func (c *Client) refreshRoot() {
 	}
 	c.DefaultRoot = root
 	c.SudoPassword = pw
+}
+
+func (c *Client) commandForOperation(command string, useSudo bool) string {
+	cmd := c.commandFor(command)
+	if useSudo && !c.DefaultRoot && c.Username != "root" {
+		password := c.SudoPassword
+		if password == "" {
+			password = c.Password
+		}
+		return buildSudoCommand("sh -c "+shellQuote(command), password)
+	}
+	return cmd
 }

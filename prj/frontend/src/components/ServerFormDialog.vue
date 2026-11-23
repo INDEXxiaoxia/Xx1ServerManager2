@@ -95,7 +95,7 @@ async function save() {
         <el-form-item label="私钥"><el-input v-model="form.privateKey" type="textarea" :rows="4" placeholder="粘贴 OpenSSH / PEM 私钥；编辑时留空保持原密钥" /></el-form-item>
         <el-form-item label="密钥口令"><el-input v-model="form.keyPassphrase" type="password" show-password placeholder="加密私钥的口令（无口令可留空）" /></el-form-item>
       </template>
-      <el-form-item label="默认权限"><el-checkbox v-model="form.defaultRoot">默认使用 root 权限（sudo）</el-checkbox></el-form-item>
+      <el-form-item label="默认权限"><el-checkbox v-model="form.defaultRoot">软件操作默认使用 root（不影响 SSH 终端）</el-checkbox></el-form-item>
       <el-form-item v-if="form.defaultRoot" label="sudo 密码"><el-input v-model="form.sudoPassword" type="password" show-password placeholder="默认使用登录密码；密钥登录可另填" /></el-form-item>
       <el-form-item v-if="form.authType !== 'key'" label="密码">
         <el-input v-model="form.password" type="password" show-password

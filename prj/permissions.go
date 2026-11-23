@@ -107,7 +107,7 @@ func (a *App) newServerClient(sv *models.Server, timeout int) *sshx.Client {
 		if sv.DefaultRoot {
 			return true, basePassword
 		}
-		return false, ""
+		return false, basePassword
 	}
 	c.DefaultRoot, c.SudoPassword = c.RefreshRoot()
 	c.RequestRoot = func() (string, error) {
@@ -174,18 +174,14 @@ func (a *App) cachedRoot(sv *models.Server, now time.Time) (string, bool) {
 	return g.Password, true
 }
 
-// 普通交互式 SSH 登录只采用服务器显式配置，不能被其他功能的临时授权改变。
+// 普通交互式 SSH 始终使用登录用户，不继承软件默认提权或临时授权。
 // 容器终端仍可使用操作授权，因为启动 docker exec 可能需要访问受限的 socket。
 func (a *App) newTerminalClient(sv *models.Server, command string) *sshx.Client {
 	c := a.newServerClient(sv, 10)
 	if command == "" {
-		defaultRoot := sv.DefaultRoot
-		password := sv.SudoPassword
-		if password == "" {
-			password = sv.Password
-		}
-		c.RefreshRoot = func() (bool, string) { return defaultRoot, password }
+		c.RefreshRoot = func() (bool, string) { return false, "" }
 		c.DefaultRoot, c.SudoPassword = c.RefreshRoot()
+		c.RequestRoot = nil
 	}
 	return c
 }
