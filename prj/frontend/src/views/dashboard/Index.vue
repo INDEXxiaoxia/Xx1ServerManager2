@@ -1,4 +1,6 @@
 <script setup>
+import {ordered, dragRow} from '@/utils/list-order'
+
 import {ref, onMounted, onBeforeUnmount, computed} from 'vue'
 import {useRouter} from 'vue-router'
 import {api, events} from '@/api'
@@ -222,6 +224,12 @@ function keyMountOf(id) {
   return k ? k.mount : ''
 }
 
+function hasResourceAlert(id) {
+  const stats = statsMap.value[id]
+  return healthOf(id).state === 'online' && stats &&
+    (stats.cpuUsage > 80 || stats.memUsage > 80 || isDiskWarn(id))
+}
+
 function isDiskWarn(id) {
   const k = keyDiskOf(id)
   return !!k && !k.isReadOnly && (Number(k.usage) || 0) >= 80
@@ -315,9 +323,10 @@ function clearFilter() {
         <i class="group-line" />
       </header>
       <div class="server-grid">
-        <div v-for="s in sec.servers" :key="s.id" class="card server-card" @click="goMonitor(s.id)">
+        <div v-for="s in ordered(sec.servers, 'servers')" v-bind="dragRow(sec.servers, 'servers', s)" :key="s.id" class="card server-card" :class="{'resource-alert': hasResourceAlert(s.id)}" @click="goMonitor(s.id)">
           <div class="flex-between">
             <span class="server-name">
+              <span v-if="hasResourceAlert(s.id)" class="resource-alert-icon" title="资源使用率告警" aria-label="资源使用率告警">⚠</span>
               <span class="status-dot" :class="'is-' + healthOf(s.id).state" />{{ s.name }}
             </span>
             <el-tag size="small" :type="healthTag(s.id)" :title="healthTitle(s.id)">
@@ -515,6 +524,23 @@ function clearFilter() {
   cursor: pointer;
   transition: transform .3s cubic-bezier(.16, 1, .3, 1), box-shadow .3s ease;
   animation: rise .45s cubic-bezier(.16, 1, .3, 1) both;
+}
+.server-card.resource-alert { position: relative; }
+.resource-alert-icon { color: var(--red); }
+.resource-alert::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  pointer-events: none;
+  border: 1px solid var(--red);
+  background: color-mix(in srgb, var(--red) 8%, transparent);
+  box-shadow: 0 0 14px color-mix(in srgb, var(--red) 32%, transparent);
+  animation: resource-pulse 2.8s ease-in-out infinite alternate;
+}
+@keyframes resource-pulse { from { opacity: .4; } to { opacity: .95; } }
+@media (prefers-reduced-motion: reduce) {
+  .resource-alert::after { animation: none; opacity: .75; }
 }
 .server-grid > .server-card:nth-child(1) { animation-delay: .04s; }
 .server-grid > .server-card:nth-child(2) { animation-delay: .08s; }

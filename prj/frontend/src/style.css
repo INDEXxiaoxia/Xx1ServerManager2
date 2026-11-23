@@ -984,3 +984,7 @@ html, body, #app {
 .el-container, .el-main, .page-shell { min-width: 0; min-height: 0; }
 @media (max-width: 1100px) { .terminal-page .sidebar { width: 280px; } .layout .aside { max-width: 160px; } }
 @media (max-height: 700px) { .layout .header { flex-shrink: 0; height: 44px; } }
+
+.drag-grip { cursor: grab; color: var(--ink-3); user-select: none; }
+
+.order-moving, tr.order-moving > td { background: var(--blue-soft) !important; outline: 1px dashed var(--blue); outline-offset: -1px; }

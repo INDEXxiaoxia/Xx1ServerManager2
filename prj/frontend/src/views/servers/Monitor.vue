@@ -1,4 +1,6 @@
 <script setup>
+import {ordered, dragRow} from '@/utils/list-order'
+
 import GroupedServerSelect from "@/components/GroupedServerSelect.vue"
 import {ref, computed, watch, onMounted, onBeforeUnmount, nextTick} from 'vue'
 import * as echarts from 'echarts'
@@ -427,7 +429,8 @@ onBeforeUnmount(() => {
 
     <div class="card">
       <h4>内存占用 TOP10 进程</h4>
-      <el-table :data="processes" stripe size="small" v-loading="loading" class="mt-12">
+      <el-table row-key="pid" :data="ordered(processes, 'process:'+selectedId, 'pid')" stripe size="small" v-loading="loading" class="mt-12">
+        <el-table-column width="36" label=""><template #default="{row}"><span class="drag-grip" v-bind="dragRow(processes, 'process:'+selectedId, row, 'pid')">⠿</span></template></el-table-column>
         <el-table-column prop="user" label="用户" width="100" />
         <el-table-column prop="pid" label="PID" width="80" />
         <el-table-column prop="memPercent" label="内存%" width="90" />

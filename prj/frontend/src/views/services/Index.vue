@@ -1,4 +1,6 @@
 <script setup>
+import {ordered, dragRow} from '@/utils/list-order'
+
 import GroupedServerSelect from "@/components/GroupedServerSelect.vue"
 import {ref, watch, onMounted} from 'vue'
 import {useRoute} from 'vue-router'
@@ -90,7 +92,8 @@ onMounted(async () => {
     </div>
 
     <div class="card">
-      <el-table :data="filtered()" v-loading="loading" stripe>
+      <el-table row-key="name" :data="ordered(filtered(), 'services:'+selectedId, 'name')" v-loading="loading" stripe>
+        <el-table-column width="36" label=""><template #default="{row}"><span class="drag-grip" v-bind="dragRow(filtered(), 'services:'+selectedId, row, 'name')">⠿</span></template></el-table-column>
         <el-table-column prop="name" label="服务名" min-width="200" class-name="mono" />
         <el-table-column prop="description" label="描述" min-width="200" show-overflow-tooltip />
         <el-table-column label="状态" width="110">

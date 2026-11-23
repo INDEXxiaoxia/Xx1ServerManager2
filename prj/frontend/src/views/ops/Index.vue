@@ -4,6 +4,7 @@ import {ref, computed, onMounted, onActivated} from 'vue'
 import {useRoute, useRouter} from 'vue-router'
 import {ElMessage} from 'element-plus'
 import {api} from '@/api'
+import Services from '../services/Index.vue'
 import DiskTool from './DiskTool.vue'
 
 // 组件名供 Layout 的 <keep-alive :include> 匹配：切到其他页面时本页不销毁，
@@ -20,6 +21,7 @@ const activeTool = ref('')
 // 工具清单：以后新增"妙妙小工具"只要往这里加一项 + 挂一个组件即可。
 // features 用一句话讲清"这个工具能帮你做什么"，卡片上直接展示。
 const tools = [
+  {key:'services', name:'服务管理', desc:'查看与管理 systemd 服务', icon:'Setting', ready:true, features:['启动、停止和重启服务','查看服务状态']},
   {
     key: 'disk',
     name: '磁盘空间检测',
@@ -130,9 +132,7 @@ onActivated(async () => {
     <template v-if="!activeTool">
       <div class="ops-hero">
         <h2 class="ops-hero-title">运维工具</h2>
-        <p class="ops-hero-sub">
-          选一个工具开始排查。<b>本模块只做分析</b>，不会修改或删除服务器上的任何文件。
-        </p>
+        
       </div>
 
       <div class="ops-grid">
@@ -174,14 +174,15 @@ onActivated(async () => {
         <i class="ops-divider" />
         <span class="ops-tool-title">{{ activeToolMeta.name }}</span>
         <span class="text-muted ops-tool-sub">{{ activeToolMeta.desc }}</span>
-        <div class="ops-toolbar-right">
+        <div v-if="activeTool !== 'services'" class="ops-toolbar-right">
           <span class="ops-label">服务器</span>
           <GroupedServerSelect v-model="serverId" :servers="servers" style="width:260px" @change="onServerChange" />
           <span v-if="currentServer" class="text-muted mono ops-host">{{ currentServer.username }}@{{ currentServer.host }}</span>
         </div>
       </div>
 
-      <DiskTool v-if="activeTool === 'disk' && serverId" :key="serverId" :server-id="serverId" />
+      <Services v-if="activeTool === 'services'" />
+      <DiskTool v-else-if="activeTool === 'disk' && serverId" :key="serverId" :server-id="serverId" />
       <div v-else class="card">
         <el-empty description="请先选择一台服务器" :image-size="80" />
       </div>

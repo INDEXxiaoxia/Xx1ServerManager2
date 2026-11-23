@@ -1,4 +1,6 @@
 <script setup>
+import {ordered, dragRow} from '@/utils/list-order'
+
 import PresetFormDialog from "@/components/PresetFormDialog.vue"
 const presetDialog = ref(false)
 import {ref, computed, watch, onMounted} from 'vue'
@@ -138,7 +140,8 @@ watch(running, (v, old) => {
 
         <div class="card">
           <h3 class="card-title">最近执行历史</h3>
-          <el-table :data="history" stripe size="small" class="mt-12">
+          <el-table row-key="id" :data="ordered(history, 'history', 'id')" stripe size="small" class="mt-12">
+        <el-table-column width="36" label=""><template #default="{row}"><span class="drag-grip" v-bind="dragRow(history, 'history', row, 'id')">⠿</span></template></el-table-column>
             <el-table-column prop="serverName" label="服务器" width="130" />
             <el-table-column prop="command" label="命令" min-width="200" show-overflow-tooltip class-name="mono" />
             <el-table-column label="状态" width="90">

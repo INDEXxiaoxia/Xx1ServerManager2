@@ -1,4 +1,6 @@
 <script setup>
+import {ordered, dragRow} from '@/utils/list-order'
+
 import PresetFormDialog from "@/components/PresetFormDialog.vue"
 const presetDialog = ref(false)
 import {ref, onMounted, computed} from 'vue'
@@ -122,7 +124,8 @@ const taskList = computed(() => Object.values(tasks.value || {}))
           {{ running ? '上传中' : '已结束' }}
         </el-tag>
       </div>
-      <el-table :data="taskList" stripe class="mt-12">
+      <el-table row-key="taskId" :data="ordered(taskList, 'upload', 'taskId')" stripe class="mt-12">
+        <el-table-column width="36" label=""><template #default="{row}"><span class="drag-grip" v-bind="dragRow(taskList, 'upload', row, 'taskId')">⠿</span></template></el-table-column>
         <el-table-column prop="serverName" label="服务器" width="140" />
         <el-table-column prop="localPath" label="本地文件" min-width="200" show-overflow-tooltip />
         <el-table-column prop="remotePath" label="远程路径" min-width="200" show-overflow-tooltip />

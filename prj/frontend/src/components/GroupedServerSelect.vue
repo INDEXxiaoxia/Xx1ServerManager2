@@ -1,4 +1,5 @@
 <script setup>
+import {ordered} from '@/utils/list-order'
 import {ref, computed, onMounted} from 'vue'
 import {api} from '@/api'
 import {groupIdOf, orderedGroups} from '@/utils/groups'
@@ -6,9 +7,9 @@ const props = defineProps({modelValue: String, servers: {type: Array, default: (
 const emit = defineEmits(['update:modelValue', 'change'])
 const groups = ref([])
 onMounted(async () => { groups.value = await api.listGroups() })
-const data = computed(() => orderedGroups(props.servers, groups.value).map(g => ({
+const data = computed(() => ordered(orderedGroups(props.servers, groups.value), 'groups').map(g => ({
   value: 'group:' + g.id, label: g.name,
-  children: props.servers.filter(s => g.isUngrouped ? !groupIdOf(s) : groupIdOf(s) === g.id)
+  children: ordered(props.servers, 'servers').filter(s => g.isUngrouped ? !groupIdOf(s) : groupIdOf(s) === g.id)
     .map(s => ({value: s.id, label: `${s.name} (${s.host})`}))
 })).filter(g => g.children.length))
 function change(value) { emit('update:modelValue', value); emit('change', value) }

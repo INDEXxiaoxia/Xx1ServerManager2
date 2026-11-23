@@ -86,6 +86,10 @@ export function DownloadFromServer(arg1, arg2, arg3) {
   return window['go']['main']['App']['DownloadFromServer'](arg1, arg2, arg3);
 }
 
+export function DownloadUpdate(arg1) {
+  return window['go']['main']['App']['DownloadUpdate'](arg1);
+}
+
 export function DrillDiskDir(arg1, arg2, arg3, arg4) {
   return window['go']['main']['App']['DrillDiskDir'](arg1, arg2, arg3, arg4);
 }
@@ -162,6 +166,10 @@ export function IsUnlocked() {
   return window['go']['main']['App']['IsUnlocked']();
 }
 
+export function LatestVersion() {
+  return window['go']['main']['App']['LatestVersion']();
+}
+
 export function ListAIModels(arg1, arg2) {
   return window['go']['main']['App']['ListAIModels'](arg1, arg2);
 }
@@ -208,6 +216,10 @@ export function OpenConfigDir() {
 
 export function ReadRemoteTextFile(arg1, arg2, arg3) {
   return window['go']['main']['App']['ReadRemoteTextFile'](arg1, arg2, arg3);
+}
+
+export function RecentVersions() {
+  return window['go']['main']['App']['RecentVersions']();
 }
 
 export function RenameRemote(arg1, arg2, arg3) {

@@ -23,7 +23,7 @@
       @check="handleCheck"
     >
       <template #default="{data}">
-        <span class="tree-node">
+        <span class="tree-node" v-bind="data.type === 'group' ? dragRow(treeData, 'groups', data) : dragRow(servers, 'servers', data)">
           <el-icon v-if="data.type === 'group'" class="node-icon"><Folder /></el-icon>
           <el-icon v-else class="node-icon"><Monitor /></el-icon>
           <span class="node-label">{{ data.label }}</span>
@@ -35,6 +35,7 @@
 </template>
 
 <script setup>
+import {ordered, dragRow} from "@/utils/list-order"
 import {ref, computed, watch, onMounted} from 'vue'
 import {api} from '@/api'
 import {groupIdOf, orderedGroups} from '@/utils/groups'
@@ -55,8 +56,8 @@ const treeProps = {children: 'children', label: 'label'}
 // 分组顺序与总览一致：有服务器的分组在前，未分组最后
 const treeData = computed(() => {
   const data = []
-  const svs = servers.value || []
-  return orderedGroups(svs, groups.value)
+  const svs = ordered(servers.value, 'servers')
+  return ordered(orderedGroups(svs, groups.value), 'groups')
     .map(g => {
       const gs = g.isUngrouped ? svs.filter(s => !groupIdOf(s)) : svs.filter(s => groupIdOf(s) === g.id)
       return {id: g.id, label: `${g.name} (${gs.length})`, type: 'group', children: gs.map(toNode)}

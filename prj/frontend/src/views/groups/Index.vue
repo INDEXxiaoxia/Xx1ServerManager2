@@ -1,4 +1,6 @@
 <script setup>
+import {ordered, dragRow} from '@/utils/list-order'
+
 import {ref, reactive, computed, onMounted, watch} from 'vue'
 import {ElMessage, ElMessageBox} from 'element-plus'
 import {api} from '@/api'
@@ -242,7 +244,7 @@ watch(selectedGroup, (nv, ov) => {
           <el-button size="small" type="primary" @click="openAdd">新增分组</el-button>
         </div>
         <ul class="group-list">
-          <li v-for="g in groupsView" :key="g.id"
+          <li v-for="g in ordered(groupsView, 'groups')" v-bind="dragRow(groupsView, 'groups', g)" :key="g.id"
               class="group-row" :class="{active: selectedGroup === g.id, 'has-ops': !g.isUngrouped}"
               @click="selectGroup(g.id)">
             <i class="dot" :style="{background: g.color}" />
@@ -284,7 +286,7 @@ watch(selectedGroup, (nv, ov) => {
           </div>
 
           <div class="member-list">
-            <div v-for="s in visibleServers" :key="s.id" class="member-row" :class="{checked: isChecked(s.id)}">
+            <div v-for="s in ordered(visibleServers, 'servers')" v-bind="dragRow(visibleServers, 'servers', s)" :key="s.id" class="member-row" :class="{checked: isChecked(s.id)}">
               <el-checkbox :model-value="isChecked(s.id)" @change="v => toggle(s.id, v)" />
               <span class="m-name" :title="s.name">{{ s.name }}</span>
               <span class="m-host muted">{{ s.host }}</span>

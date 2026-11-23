@@ -535,7 +535,14 @@ onBeforeUnmount(() => {
           <el-icon><WarningFilled /></el-icon>
           <span>{{ currentLevel.note }}</span>
         </div>
-        <div v-if="!currentDirs.length" class="text-muted dt-empty-line">
+        <div v-if="running && !drillStack.length && !currentDirs.length" class="dt-volume-loading" role="status">
+          <el-icon class="dt-spin"><Loading /></el-icon>
+          <span>正在扫描目录占用…</span>
+        </div>
+        <div v-else-if="!currentDirs.length && (noticeText || errorText)" class="text-muted dt-empty-line">
+          目录扫描未完成。
+        </div>
+        <div v-else-if="!currentDirs.length" class="text-muted dt-empty-line">
           没有子项（或该目录没有读权限）。可以勾选「以 root 权限扫描」后重试。
         </div>
         <!-- 局部加载：包住列表本身，遮罩只在这块区域内，页面其余部分照常可操作 -->
@@ -1028,4 +1035,6 @@ onBeforeUnmount(() => {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
+.dt-volume-loading { display: flex; align-items: center; justify-content: center; gap: 10px; min-height: 80px; color: var(--ink-2); }
+.dt-volume-loading .el-icon { color: var(--blue); font-size: 20px; }
 </style>

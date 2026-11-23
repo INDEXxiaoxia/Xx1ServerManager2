@@ -1,4 +1,6 @@
 <script setup>
+import {ordered, dragRow} from '@/utils/list-order'
+
 import {ref, computed, onMounted, onActivated, onDeactivated, onBeforeUnmount, nextTick} from 'vue'
 import {useRouter} from 'vue-router'
 import {ElMessage, ElMessageBox} from 'element-plus'
@@ -256,7 +258,7 @@ function onTakeoverUpdate(st) {
             暂无命令，点上方 <el-icon><Plus /></el-icon> 添加
           </div>
           <div
-            v-for="c in filteredCommands"
+            v-for="c in ordered(filteredCommands, 'commands')" v-bind="dragRow(filteredCommands, 'commands', c)"
             :key="c.id"
             class="qp-item"
             :title="c.command"
@@ -290,7 +292,7 @@ function onTakeoverUpdate(st) {
             暂无路径，点上方 <el-icon><Plus /></el-icon> 添加
           </div>
           <div
-            v-for="p in paths"
+            v-for="p in ordered(paths, 'paths')" v-bind="dragRow(paths, 'paths', p)"
             :key="p.id"
             class="qp-item"
             :title="p.path"

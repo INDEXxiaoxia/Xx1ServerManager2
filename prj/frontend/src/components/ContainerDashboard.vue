@@ -1,4 +1,6 @@
 <script setup>
+import {ordered, dragRow} from '@/utils/list-order'
+
 import {computed} from 'vue'
 const props=defineProps({stats:{type:Array,default:()=>[]},containers:{type:Array,default:()=>[]}})
 const cards=computed(()=>props.containers.map(c=>{
@@ -12,7 +14,7 @@ function color(v){const n=percent(v);return n>=90?'var(--red)':n>=70?'var(--yell
  <div class="dashboard-summary"><span>共 <b>{{cards.length}}</b> 个容器</span><span class="running">运行中 {{cards.filter(c=>c.running).length}}</span><span>已停止 / 其他 {{cards.filter(c=>!c.running).length}}</span></div>
  <el-empty v-if="!cards.length" description="该服务器暂无容器" />
  <div class="container-dashboard">
-  <article v-for="c in cards" :key="c.id" class="container-gauge-card">
+  <article v-for="c in ordered(cards, 'containerCards')" v-bind="dragRow(cards, 'containerCards', c)" :key="c.id" class="container-gauge-card">
    <header><div class="container-identity"><strong :title="c.name">{{c.name}}</strong><small :title="c.image">{{c.image}}</small></div><el-tag :type="c.running?'success':'info'" size="small">{{c.running?'运行中':'已停止 / 其他'}}</el-tag></header>
    <div class="state-line">{{c.state}}</div>
    <div class="gauges">

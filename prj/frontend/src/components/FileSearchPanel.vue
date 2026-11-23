@@ -1,4 +1,6 @@
 <script setup>
+import {ordered, dragRow} from '@/utils/list-order'
+
 import {computed} from 'vue'
 
 const props = defineProps({
@@ -65,7 +67,8 @@ function highlight(name) {
 
     <el-empty v-else-if="!count" description="当前目录下没有匹配的文件名" :image-size="60" />
 
-    <el-table v-else :data="items" stripe size="small" max-height="360">
+    <el-table v-else row-key="path" :data="ordered(items, 'search:'+scope, 'path')" stripe size="small" max-height="360">
+        <el-table-column width="36" label=""><template #default="{row}"><span class="drag-grip" v-bind="dragRow(items, 'search:'+scope, row, 'path')">⠿</span></template></el-table-column>
       <el-table-column label="名称" min-width="260">
         <template #default="{row}">
           <span class="result-name">

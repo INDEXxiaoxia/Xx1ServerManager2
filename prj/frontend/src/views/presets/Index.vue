@@ -1,4 +1,6 @@
 <script setup>
+import {ordered, dragRow} from '@/utils/list-order'
+
 import {ref, onMounted, onErrorCaptured} from 'vue'
 import {ElMessage, ElMessageBox} from 'element-plus'
 import {api} from '@/api'
@@ -69,7 +71,8 @@ async function remove(type, item) {
 
       <!-- 预设命令 -->
       <div v-show="tab === 'commands'" class="tab-panel">
-        <el-table :data="commands" stripe>
+        <el-table row-key="id" :data="ordered(commands, 'commands', 'id')" stripe>
+        <el-table-column width="36" label=""><template #default="{row}"><span class="drag-grip" v-bind="dragRow(commands, 'commands', row, 'id')">⠿</span></template></el-table-column>
           <el-table-column prop="name" label="名称" min-width="120" />
           <el-table-column prop="category" label="分类" width="90">
             <template #default="{row}"><el-tag size="small">{{ row.category || '其他' }}</el-tag></template>
@@ -91,7 +94,8 @@ async function remove(type, item) {
 
       <!-- 预设路径 -->
       <div v-show="tab === 'paths'" class="tab-panel">
-        <el-table :data="paths" stripe>
+        <el-table row-key="id" :data="ordered(paths, 'paths', 'id')" stripe>
+        <el-table-column width="36" label=""><template #default="{row}"><span class="drag-grip" v-bind="dragRow(paths, 'paths', row, 'id')">⠿</span></template></el-table-column>
           <el-table-column prop="name" label="名称" min-width="120" />
           <el-table-column prop="path" label="路径" min-width="260" show-overflow-tooltip class-name="mono" />
           <el-table-column prop="description" label="描述" min-width="160" show-overflow-tooltip />

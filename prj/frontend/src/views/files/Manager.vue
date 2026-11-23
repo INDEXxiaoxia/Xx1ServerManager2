@@ -1,4 +1,6 @@
 <script setup>
+import {ordered, dragRow} from '@/utils/list-order'
+
 import {useTransfers} from "@/store/transfers"
 const transfers = useTransfers()
 import GroupedServerSelect from "@/components/GroupedServerSelect.vue"
@@ -686,12 +688,13 @@ onBeforeUnmount(() => {
       </div>
 
       <el-table
-        :data="pagedFiles"
+        row-key="name" :data="ordered(pagedFiles, 'files:'+selectedId+currentPath, 'name')"
         v-loading="loading"
         stripe
         @row-dblclick="openDir"
         @sort-change="onSortChange"
       >
+        <el-table-column width="36" label=""><template #default="{row}"><span class="drag-grip" v-bind="dragRow(pagedFiles, 'files:'+selectedId+currentPath, row, 'name')">⠿</span></template></el-table-column>
         <el-table-column label="名称" prop="name" min-width="240" sortable="custom">
           <template #default="{row}">
             <span class="file-name" @click="openDir(row)">

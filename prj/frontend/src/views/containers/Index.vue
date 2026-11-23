@@ -1,4 +1,7 @@
 <script setup>
+import {showImageHash} from '@/utils/display-options'
+import {ordered, dragRow} from '@/utils/list-order'
+
 import ContainerDashboard from "@/components/ContainerDashboard.vue"
 import ContainerLogs from "@/components/ContainerLogs.vue"
 const logRow=ref(null),logVisible=ref(false),stats=ref([]),statsVisible=ref(false),statsBusy=ref(false),statsError=ref('')
@@ -42,6 +45,13 @@ async function load() {
     const output = await api.runRemoteCommand(id, bin + " ps -a --no-trunc --format '{{json .}}'", 30)
     if (token !== generation) return
     rows.value = output.trim().split('\n').filter(Boolean).map(line => { const row = JSON.parse(line); return {...row, portMappings:containerPorts(row.Ports)} })
+    const ids = rows.value.map(row => row.ID).filter(id => /^[a-f0-9]{12,64}$/.test(id))
+    if (showImageHash.value && ids.length) {
+      const result = await api.runRemoteCommand(id, bin + " inspect --format '{{.Id}} {{.Image}}' " + ids.join(' '), 30)
+      if (token !== generation) return
+      const images = new Map(result.trim().split(/\s*\n/).map(line => line.trim().split(/\s+/)))
+      rows.value = rows.value.map(row => ({...row, imageHash: images.get(row.ID)?.replace(/^sha256:/,'').slice(0,12)}))
+    }
   } catch(e) { if (token === generation) error.value = String(e) }
   finally { if (token === generation) loading.value = false }
 }
@@ -69,6 +79,7 @@ async function inspect(row, logs) {
   catch(e) { detail.value = String(e) }
   finally { busy.value = false }
 }
+watch(showImageHash, enabled => { if (enabled) load() })
 watch([serverId, engine], () => { statsVisible.value=false;stats.value=[];statsError.value=''; localStorage.setItem('xx1.container.server',serverId.value); load() })
 onMounted(async () => { servers.value = await api.listServers(); if (!servers.value.some(s => s.id === serverId.value)) serverId.value = servers.value[0]?.id || ''; else load() })
 </script>
@@ -86,9 +97,10 @@ onMounted(async () => { servers.value = await api.listServers(); if (!servers.va
         <el-button @click="load" :loading="loading" :disabled="busy"><el-icon><Refresh /></el-icon>&nbsp;刷新</el-button>
       </div>
       <el-alert v-if="error" :title="error" description="请确认服务器已安装所选容器引擎，且 SSH 用户有访问权限。" type="error" :closable="false" />
-      <el-table :data="filteredRows" v-loading="loading" empty-text="暂无匹配容器" stripe row-key="ID">
+      <el-table :data="ordered(filteredRows, 'containers:'+serverId+engine, 'ID')" v-loading="loading" empty-text="暂无匹配容器" stripe row-key="ID">
+        <el-table-column width="36" label=""><template #default="{row}"><span class="drag-grip" v-bind="dragRow(filteredRows, 'containers:'+serverId+engine, row, 'ID')">⠿</span></template></el-table-column>
         <el-table-column prop="Names" label="容器" min-width="150" show-overflow-tooltip/>
-        <el-table-column prop="Image" label="镜像" min-width="180" show-overflow-tooltip/>
+        <el-table-column prop="Image" label="镜像" min-width="220" show-overflow-tooltip><template #default="{row}">{{ row.Image }} <small v-if="showImageHash && row.imageHash">({{ row.imageHash }})</small></template></el-table-column>
         <el-table-column label="状态" min-width="160"><template #default="{row}">
           <el-tag :type="isRunning(row) ? 'success' : 'info'" size="small">{{ row.Status }}</el-tag>
         </template></el-table-column>

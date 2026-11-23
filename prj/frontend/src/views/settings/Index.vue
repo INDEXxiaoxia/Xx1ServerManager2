@@ -1,10 +1,38 @@
 <script setup>
+import ReleaseHistory from '@/components/ReleaseHistory.vue'
+import {showImageHash} from '@/utils/display-options'
 import {ref, reactive, onMounted} from 'vue'
 import {ElMessage} from 'element-plus'
 import {api} from '@/api'
 import {useAppStore} from '@/store'
 import {applyTheme, THEMES, getStoredTheme} from '@/theme'
 
+import config from '../../../../wails.json'
+const version = config.info.productVersion
+const releases = ref([])
+const latest = ref('')
+const updating = ref(false)
+const updateStatus = ref('')
+async function checkUpdate() {
+  updating.value = true
+  latest.value = ''
+  try {
+    const [tag, records] = await Promise.all([window.go.main.App.LatestVersion(), window.go.main.App.RecentVersions()])
+    releases.value = records
+    const newer = tag.replace(/^v/i, '').localeCompare(version, 'en', {numeric:true}) > 0
+    if (newer) latest.value = tag
+    updateStatus.value = newer ? '发现新版本 ' + tag : '当前已是最新版本'
+  } catch (error) { updateStatus.value = '检查失败：' + error }
+  finally { updating.value = false }
+}
+async function downloadUpdate() {
+  updating.value = true
+  try {
+    const path = await window.go.main.App.DownloadUpdate(latest.value)
+    if (path) updateStatus.value = '安装包已保存到 ' + path
+  } catch (error) { updateStatus.value = '下载失败：' + error }
+  finally { updating.value = false }
+}
 const appStore = useAppStore()
 const settings = reactive({maxConcurrent: 5, uploadTimeout: 300, commandTimeout: 30, theme: 'light'})
 const rootCacheMinutes = ref(0)
@@ -169,10 +197,9 @@ async function setPassword() {
 </script>
 
 <template>
-  <div class="page-container">
-    <div class="card mb-12">
-      <h3 class="card-title">常规设置</h3>
-      <el-form label-width="120px" class="mt-12">
+  <div class="page-container"><el-tabs>
+    <el-tab-pane label="常规"><div class="card">
+      <el-form label-width="165px" class="mt-12">
         <el-form-item label="最大并发数">
           <el-input-number v-model="settings.maxConcurrent" :min="1" :max="20" />
         </el-form-item>
@@ -182,6 +209,7 @@ async function setPassword() {
         <el-form-item label="命令超时(秒)">
           <el-input-number v-model="settings.commandTimeout" :min="5" :max="300" />
         </el-form-item>
+        <el-form-item label="容器列表"><el-checkbox v-model="showImageHash">显示镜像短 hash</el-checkbox></el-form-item>
         <el-form-item label="主题">
           <el-select v-model="settings.theme" style="width: 200px" @change="onThemeChange">
             <el-option v-for="t in THEMES" :key="t.name" :label="t.label" :value="t.name">
@@ -209,9 +237,8 @@ async function setPassword() {
       </el-form>
     </div>
 
-    <div class="card mb-12">
-      <h3 class="card-title">AI 设置（SSH 终端的 AI 助手）</h3>
-      <el-form label-width="120px" class="mt-12">
+    </el-tab-pane><el-tab-pane label="AI 助手"><div class="card">
+      <el-form label-width="165px" class="mt-12">
         <el-form-item label="openAPI地址">
           <el-input v-model="ai.baseURL" :placeholder="AI_DEFAULT_BASE" style="width: 420px" />
         </el-form-item>
@@ -253,9 +280,8 @@ async function setPassword() {
       </el-form>
     </div>
 
-    <div class="card mb-12">
-      <h3 class="card-title">安全</h3>
-      <el-form label-width="190px" class="mt-12"><el-form-item label="临时 root 权限缓存时间"><el-select v-model="rootCacheMinutes" style="width:230px"><el-option :value="0" label="退出软件前一直有效"/><el-option :value="10" label="10 分钟"/><el-option :value="60" label="60 分钟"/></el-select><el-button :loading="rootCacheSaving" @click="saveRootCache" style="margin-left:8px">保存</el-button></el-form-item><div class="text-muted">按服务器分别缓存，仅保存在内存。时限从授权成功开始计算；修改配置后立即按新时限判断。锁定应用也会清除授权，已运行的终端不会因缓存到期被强制关闭。</div></el-form>
+    </el-tab-pane><el-tab-pane label="安全"><div class="card">
+      <el-form label-width="165px" class="mt-12"><el-form-item label="临时 root 权限缓存时间"><el-select v-model="rootCacheMinutes" style="width:230px"><el-option :value="0" label="退出软件前一直有效"/><el-option :value="10" label="10 分钟"/><el-option :value="60" label="60 分钟"/></el-select><el-button :loading="rootCacheSaving" @click="saveRootCache" style="margin-left:8px">保存</el-button></el-form-item><div class="text-muted">按服务器分别缓存，仅保存在内存。时限从授权成功开始计算；修改配置后立即按新时限判断。锁定应用也会清除授权，已运行的终端不会因缓存到期被强制关闭。</div></el-form>
       <div class="flex-between mt-12">
         <div class="sec-info">
           <div>主密码状态：
@@ -271,6 +297,14 @@ async function setPassword() {
       </div>
     </div>
 
+    </el-tab-pane>
+    <el-tab-pane label="版本与更新"><div class="card">
+      <el-form label-width="165px"><el-form-item label="当前版本">v{{ version }}</el-form-item>
+      <el-form-item label="在线更新"><el-button :loading="updating" @click="checkUpdate">检查更新</el-button>
+      <el-button v-if="latest" type="primary" :loading="updating" @click="downloadUpdate">下载 {{ latest }} 安装包</el-button></el-form-item>
+      <el-form-item v-if="updateStatus">{{ updateStatus }}</el-form-item></el-form>
+      <ReleaseHistory v-if="releases.length" :records="releases" :version="version" />
+    </div></el-tab-pane></el-tabs>
     <el-dialog v-model="pwDialog" :title="masterSet ? '重置主密码' : '设置主密码'" width="440px">
       <el-form label-width="90px">
         <el-form-item v-if="masterSet" label="当前密码">
@@ -291,6 +325,9 @@ async function setPassword() {
 </template>
 
 <style scoped>
+.card { max-width: 850px; }
+.card :deep(.el-input), .card :deep(.el-select) {max-width:100%;}
+
 .test-msg {
   margin-left: 12px;
   font-size: 12px;

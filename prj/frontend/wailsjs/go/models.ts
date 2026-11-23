@@ -1,3 +1,24 @@
+export namespace main {
+	
+	export class RecentVersion {
+	    Tag: string;
+	    Date: string;
+	    Body: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new RecentVersion(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.Tag = source["Tag"];
+	        this.Date = source["Date"];
+	        this.Body = source["Body"];
+	    }
+	}
+
+}
+
 export namespace models {
 	
 	export class AICommand {
