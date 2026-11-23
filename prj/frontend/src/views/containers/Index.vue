@@ -1,4 +1,5 @@
 <script setup>
+import {themeState} from '@/theme'
 import {showImageHash} from '@/utils/display-options'
 import {ordered, dragRow} from '@/utils/list-order'
 
@@ -97,7 +98,7 @@ onMounted(async () => { servers.value = await api.listServers(); if (!servers.va
         <el-button @click="load" :loading="loading" :disabled="busy"><el-icon><Refresh /></el-icon>&nbsp;刷新</el-button>
       </div>
       <el-alert v-if="error" :title="error" description="请确认服务器已安装所选容器引擎，且 SSH 用户有访问权限。" type="error" :closable="false" />
-      <el-table :data="ordered(filteredRows, 'containers:'+serverId+engine, 'ID')" v-loading="loading" empty-text="暂无匹配容器" stripe row-key="ID">
+      <el-table :data="ordered(filteredRows, 'containers:'+serverId+engine, 'ID')" v-loading="loading" :element-loading-text="themeState.name === 'sakura' ? '正在读取容器列表…' : undefined" empty-text="暂无匹配容器" stripe row-key="ID">
         <el-table-column width="36" label=""><template #default="{row}"><span class="drag-grip" v-bind="dragRow(filteredRows, 'containers:'+serverId+engine, row, 'ID')">⠿</span></template></el-table-column>
         <el-table-column prop="Names" label="容器" min-width="150" show-overflow-tooltip/>
         <el-table-column prop="Image" label="镜像" min-width="220" show-overflow-tooltip><template #default="{row}">{{ row.Image }} <small v-if="showImageHash && row.imageHash">({{ row.imageHash }})</small></template></el-table-column>

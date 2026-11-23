@@ -1,4 +1,6 @@
 <script setup>
+import {themeState} from '@/theme'
+import {BellFilled} from '@element-plus/icons-vue'
 import {ordered, dragRow} from '@/utils/list-order'
 
 import {computed, onMounted} from 'vue'
@@ -10,11 +12,11 @@ const names = {queued:'排队中',running:'上传中',cancelling:'取消中',can
 function bytes(n) { return n >= 1048576 ? (n/1048576).toFixed(1)+' MB' : (n/1024).toFixed(1)+' KB' }
 </script>
 <template>
-  <button v-if="store.tasks.length" class="transfer-float" @click="store.visible = true">↑ 上传任务 {{ active ? '('+active+')' : '' }}</button>
+  <button v-if="store.tasks.length" class="transfer-float" @click="store.visible = true"><el-icon v-if="themeState.name === 'sakura'"><BellFilled /></el-icon><template v-else>↑</template> 上传任务 {{ active ? '('+active+')' : '' }}</button>
   <el-drawer v-model="store.visible" title="上传任务" size="420px" append-to-body>
     <p class="text-muted">切换页面不影响上传。失败可重新上传；关闭应用会中断任务。</p>
     <el-button size="small" @click="store.tasks = store.tasks.filter(t => ['queued','running','cancelling'].includes(t.status))">清除已结束任务</el-button>
-    <div v-for="t in ordered(store.tasks, 'transfers')" v-bind="dragRow(store.tasks, 'transfers', t)" :key="t.id" class="transfer-item">
+    <div v-for="t in ordered(store.tasks, 'transfers')" v-bind="dragRow(store.tasks, 'transfers', t)" :key="t.id" class="transfer-item" :data-status="t.status">
       <strong>{{ t.serverName }} · {{ names[t.status] }}</strong>
       <div class="transfer-path">{{ t.remotePath }}</div>
       <el-progress :percentage="t.status === 'success' ? 100 : t.total ? Math.min(99,Math.round(t.transferred/t.total*100)) : 0" :status="t.status === 'success' ? 'success' : t.status === 'failed' ? 'exception' : undefined" />

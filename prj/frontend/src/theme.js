@@ -6,7 +6,8 @@ import {reactive} from 'vue'
 export const THEMES = [
   {name: 'light', label: '光明模式'},
   {name: 'dark', label: '黑暗模式'},
-  {name: 'cyber', label: '赛博朋克'}
+  {name: 'cyber', label: '赛博朋克'},
+  {name: 'sakura', label: '萌化主题'}
 ]
 
 const STORAGE_KEY = 'sm2_theme'
@@ -37,6 +38,7 @@ export function applyTheme(name) {
 
 // 各主题 init 背景（防首屏闪白时底色跳变）
 export const THEME_BG = {
+  sakura: '#FAF6F3',
   light: '#F5F4F1',
   dark: '#1D1E24',
   cyber: '#05070D'
@@ -44,6 +46,11 @@ export const THEME_BG = {
 
 // ---------- ECharts 主题配色 ----------
 export function getChartTheme(name) {
+  if (name === 'sakura') return {
+    axis: '#736278', line: '#DDCEDF', split: '#EDE3EB',
+    tooltipBg:'#FFFCFA', tooltipBorder:'#D9C4DE', tooltipText:'#332B40',
+    series:{cpu:'#805CA1', mem:'#458172', disk:'#AB7632', net:'#B45F84'}
+  }
   if (name === 'cyber') {
     return {
       axis: '#7B85A3',
@@ -81,6 +88,7 @@ export function getChartTheme(name) {
 // 每块磁盘固定一色：'/' 恒用第 1 色（与"磁盘"语义色一致），其余按挂载点字母序取后续颜色，
 // 保证同一挂载点在监控页列表、折线图、总览迷你条里颜色一致。
 const DISK_PALETTE = {
+  sakura: ['#B78136','#8060A4','#448373','#B85F86','#587DB5','#84685C'],
   light: ['#C79E4F', '#5780A9', '#67947A', '#C58A98', '#9B7FB8', '#8F919B'],
   dark: ['#D0A85C', '#6C9FD6', '#7FBA96', '#D294A3', '#A88FD0', '#8B8F9A'],
   cyber: ['#FFB020', '#21E6FF', '#00FFA3', '#FF3EA5', '#A88FD0', '#7DEAFF']
@@ -110,6 +118,13 @@ export function usageColor(pct) {
 
 // ---------- xterm 终端主题配色（其余配色键由 xterm 默认补齐） ----------
 export function getTerminalTheme(name) {
+  if (name === 'sakura') return {
+    background:'#211D2A', foreground:'#F1ECF4', cursor:'#FFD4E4', cursorAccent:'#211D2A',
+    selectionBackground:'#58455F', black:'#302737', red:'#FF9BA9', green:'#94D7B8',
+    yellow:'#F2CC84', blue:'#A2BDF5', magenta:'#E0A4D7', cyan:'#8ED5DE', white:'#EFE6F2',
+    brightBlack:'#AD9DB3', brightRed:'#FFBCC6', brightGreen:'#BBF0D8', brightYellow:'#FFE3A9',
+    brightBlue:'#C9D8FF', brightMagenta:'#F5C5EC', brightCyan:'#BBF0F4', brightWhite:'#FFFFFF'
+  }
   if (name === 'cyber') {
     return {
       background: '#070B13',

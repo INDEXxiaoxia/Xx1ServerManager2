@@ -1,6 +1,7 @@
 <script setup>
+import {themeState} from '@/theme'
 import TransferCenter from "@/components/TransferCenter.vue"
-import {computed, ref, onMounted, onBeforeUnmount} from 'vue'
+import {computed, ref, watch, onMounted, onBeforeUnmount} from 'vue'
 import {useRoute} from 'vue-router'
 import {ElMessage, ElMessageBox} from 'element-plus'
 import {useBatchStore} from '@/store/batch'
@@ -42,7 +43,17 @@ const menus = [
 // 子路由（如 /batch/upload）也要高亮对应的父级菜单
 const activeMenu = computed(() => route.path)
 const currentTitle = computed(() => route.meta.title || 'Xx1ServerManager2')
-const asideWidth = computed(() => (collapsed.value ? '64px' : '200px'))
+const asideWidth = computed(() => (collapsed.value ? '64px' : themeState.name === 'sakura' ? 'clamp(158px, 18vw, 234px)' : '200px'))
+
+const poses = ['idle', 'work', 'done']
+const pose = ref(0)
+watch(() => themeState.name === 'sakura' && !collapsed.value, (visible, _, cleanup) => {
+  if (!visible) return
+  const timer = setInterval(() => {
+    pose.value = (pose.value + 1 + Math.floor(Math.random() * (poses.length - 1))) % poses.length
+  }, 7000)
+  cleanup(() => clearInterval(timer))
+}, {immediate:true})
 
 function toggleCollapse() {
   collapsed.value = !collapsed.value
@@ -75,8 +86,9 @@ async function lock() {
   <el-container class="layout">
     <el-aside :width="asideWidth" class="aside">
       <div class="logo">
+        <span v-if="themeState.name === 'sakura'" class="moe-brand-bell" aria-hidden="true" />
         <h2 v-show="!collapsed">Xx1ServerManager2</h2>
-        <span v-show="collapsed" class="logo-mini" title="Xx1ServerManager2">X2</span>
+        <span v-show="collapsed && themeState.name !== 'sakura'" class="logo-mini" title="Xx1ServerManager2">X2</span>
       </div>
       <el-menu :default-active="activeMenu" router class="menu" :collapse="collapsed" :collapse-transition="false">
         <el-menu-item v-for="m in menus" :key="m.path" :index="m.path" :title="m.title">
@@ -84,6 +96,7 @@ async function lock() {
           <span>{{ m.title }}</span>
         </el-menu-item>
       </el-menu>
+      <div v-if="themeState.name === 'sakura' && !collapsed" class="starling-station"><Transition name="moe-postcard"><span :key="pose" class="moe-postcard" :data-pose="poses[pose]" aria-hidden="true"></span></Transition></div>
     </el-aside>
 
     <el-container>

@@ -376,6 +376,7 @@ async function setPassword() {
   background: linear-gradient(135deg, #3A3B44, #1D1E24);
   border: 1px solid #555760;
 }
+.theme-dot--sakura { background:linear-gradient(135deg,#956da8 50%,#f3c4d4 50%); }
 .theme-dot--cyber {
   background: radial-gradient(circle at 30% 30%, #21E6FF, #0B0F1A 60%);
   border: 1px solid #21E6FF;

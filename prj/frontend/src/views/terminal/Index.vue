@@ -75,6 +75,7 @@ const overlayVisible = computed(() => takeoverFull.value || tkArmed.value)
 const inputLocked = computed(() => !!takeover.value.lockedKeys?.includes(activeKey.value))
 
 // ---- 开大动画：中央打字机提示 ----
+const CAST_DURATION = 3600
 const CAST_MAIN = 'AI 接管已启动'
 const CAST_SUB = 'CONTROL TRANSFERRED · 终端控制权已移交'
 const castPlaying = ref(false)
@@ -100,8 +101,23 @@ function playCast() {
   ;[...CAST_SUB].forEach((ch, i) => {
     castTimers.push(setTimeout(() => { castSub.value += ch }, subStart + i * 26))
   })
-  castTimers.push(setTimeout(() => { castPlaying.value = false }, 3600))
+  castTimers.push(setTimeout(() => { castPlaying.value = false }, CAST_DURATION))
 }
+
+const sakura = computed(() => themeState.name === 'sakura')
+const resultLabels = {done:'已完成', stopped:'已停止', error:'执行失败', maxrounds:'已达轮次上限'}
+const starResult = ref('')
+const starEntry = ref(false)
+let lastStarSession = ''
+let resultTimer, entryTimer
+function clearStars() {
+  clearTimeout(resultTimer)
+  clearTimeout(entryTimer)
+  starEntry.value = false
+  starResult.value = ''
+}
+watch([activeKey, sakura], clearStars)
+onBeforeUnmount(clearStars)
 
 function onTakeoverUpdate(st) {
   const next = st || {
@@ -109,9 +125,22 @@ function onTakeoverUpdate(st) {
     mode: '', sessionId: '', round: 0, maxRounds: 0, message: ''
   }
   const wasFull = takeoverFull.value
+  const previous = takeover.value
   takeover.value = next
+  if (sakura.value && next.full && next.sessionId && next.sessionId !== lastStarSession) {
+    clearStars()
+    lastStarSession = next.sessionId
+    starEntry.value = true
+    entryTimer = setTimeout(() => { starEntry.value = false }, CAST_DURATION)
+  }
+  if (sakura.value && wasFull && !next.full && previous.sessionId === next.sessionId && resultLabels[next.state]) {
+    clearStars()
+    lastStarSession = ''
+    starResult.value = next.state
+    resultTimer = setTimeout(() => { starResult.value = '' }, 1600)
+  }
   if (next.full && !wasFull) {
-    playCast()
+    if (themeState.name !== 'sakura') playCast()
     // 接管期间禁止多终端并行：同步模式会自动关掉
     if (syncMode.value) {
       syncMode.value = false
@@ -122,7 +151,7 @@ function onTakeoverUpdate(st) {
   if (!next.full && wasFull) {
     clearCastTimers()
     castPlaying.value = false
-    if (!next.busyKeys?.length) ElMessage.success('AI 接管已结束，终端已恢复可操作')
+    if (themeState.name !== 'sakura' && !next.busyKeys?.length) ElMessage.success('AI 接管已结束，终端已恢复可操作')
   }
 }
 
@@ -908,6 +937,7 @@ function onGlobalKeydown(ev) {
         >
           <span class="tab-title">{{ t.title }}</span>
           <el-icon v-if="t.connected === false" class="tab-off" title="会话已断开"><WarningFilled /></el-icon>
+          <span v-if="sakura && t.key !== activeKey && takeover.busyKeys?.includes(t.key)" title="AI 正在此终端工作">✦</span>
           <el-icon class="tab-close" :class="{disabled: takeover.busyKeys?.includes(t.key)}" @click.stop="closeTab(t.key)"><Close /></el-icon>
         </div>
         <el-tooltip content="新建终端" placement="bottom">
@@ -916,6 +946,12 @@ function onGlobalKeydown(ev) {
           </button>
         </el-tooltip>
       </div>
+          <div v-if="sakura && tabs.length && (overlayVisible || starResult)" class="star-duty" :class="{arriving:starEntry, paused:takeover.paused, active:takeoverFull}" :data-result="starResult">
+            <span class="starling" :data-pose="starResult === 'done' ? 'done' : takeover.paused ? 'input' : takeoverFull ? 'work' : 'idle'" aria-hidden="true" />
+            <span>{{ resultLabels[starResult] || (takeover.paused ? '等待介入' : takeoverFull ? 'AI 接管中' : '接管待命') }}</span>
+            <small v-if="takeoverFull && takeover.maxRounds > 1">{{takeover.round}}/{{takeover.maxRounds}}</small>
+            <button v-if="takeoverFull" @click="stopTakeover">停止</button>
+          </div>
     </div>
 
     <div class="term-main">
@@ -928,9 +964,18 @@ function onGlobalKeydown(ev) {
         </div>
         <!-- AI 接管的视觉提示：纯覆盖层（pointer-events 默认穿透），
              不占布局、不改变终端尺寸，因此不需要重新 fit。 -->
-        <div v-if="overlayVisible" class="tk-overlay" :class="{armed: tkArmed, active: takeoverFull, paused: takeover.paused}">
+        <div v-if="overlayVisible || (sakura && starResult)" class="tk-overlay" :class="{armed: tkArmed, active: takeoverFull, paused: takeover.paused}">
           <!-- 内发光层：靠四条线性渐变贴边发光（中间不遮内容），opacity 做呼吸。
                armed（已选中完全接管、还没开跑）时只有细细一圈；active 时是完整一圈。 -->
+          <div v-if="sakura && overlayVisible" class="moe-veil" :style="{'--moe-cast-time': CAST_DURATION + 'ms'}" :class="{intro:starEntry && !takeover.paused, waiting:takeover.paused, standby:tkArmed, operating:takeoverFull && !starEntry && !takeover.paused}" aria-hidden="true">
+            <svg v-if="takeoverFull && !takeover.paused" class="moe-comets" viewBox="0 0 1000 700" preserveAspectRatio="none" aria-hidden="true">
+              <rect class="moe-trail rose" x="2" y="2" width="996" height="696" rx="8" pathLength="100" />
+              <rect class="moe-trail gold" x="2" y="2" width="996" height="696" rx="8" pathLength="100" />
+            </svg>
+            <i v-for="corner in ['tl','tr','bl','br']" :key="corner" class="moe-corner" :class="corner">✦</i>
+            <div v-if="starEntry && !takeover.paused" class="moe-cast-title"><span class="starling" data-pose="done"></span>✦ AI 接管启动 ✦</div>
+          </div>
+          <template v-if="!sakura">
           <div class="tk-glow" />
           <!-- 沿边框跑的光：只在真正执行时出现 -->
           <svg v-if="takeoverFull" class="tk-svg" aria-hidden="true">
@@ -973,8 +1018,9 @@ function onGlobalKeydown(ev) {
               <div class="tk-announce-bar"><i /></div>
             </div>
           </div>
+          </template>
           <!-- 常驻：右上角小徽标，不挡内容 -->
-          <div v-if="takeoverFull" class="tk-badge">
+          <div v-if="takeoverFull && !sakura" class="tk-badge">
             <i class="tk-pulse" />
             <span>{{ takeover.maxRounds > 1 ? 'AI 接管中' : 'AI 正在执行' }}</span>
             <span v-if="takeover.round && takeover.maxRounds > 1" class="tk-round">

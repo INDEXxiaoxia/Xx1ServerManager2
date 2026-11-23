@@ -1,4 +1,5 @@
 <script setup>
+import {themeState} from '@/theme'
 import {ordered, dragRow} from '@/utils/list-order'
 
 import {useTransfers} from "@/store/transfers"
@@ -689,7 +690,7 @@ onBeforeUnmount(() => {
 
       <el-table
         row-key="name" :data="ordered(pagedFiles, 'files:'+selectedId+currentPath, 'name')"
-        v-loading="loading"
+        v-loading="loading" :element-loading-text="themeState.name === 'sakura' ? '正在读取目录…' : undefined"
         stripe
         @row-dblclick="openDir"
         @sort-change="onSortChange"
@@ -769,7 +770,7 @@ onBeforeUnmount(() => {
         </el-table-column>
 
         <template #empty>
-          <el-empty :description="loading ? '加载中…' : '当前目录为空'" :image-size="70" />
+          <el-empty v-if="!loading || themeState.name !== 'sakura'" :description="loading ? '加载中…' : '当前目录为空'" :image-size="70" />
         </template>
       </el-table>
 

@@ -178,6 +178,7 @@ function emitTakeover() {
     busyKeys: Object.keys(chats).filter(k => chats[k].takeoverFull || chats[k].pending),
     lockedKeys: Object.keys(chats).filter(k => { const c = chats[k]; const st = c.takeoverState; return (c.pending && c.pendingMode === 'exec' && !c.takeoverFull) || c.takeoverFull && !(st?.state === 'paused' && ['input', 'altscreen'].includes(st.kind)) }),
     full: !!c.takeoverFull,
+    state: st?.state || '',
     paused: !!(st && st.state === 'paused'),
     kind: (st && st.kind) || '',
     locked: locked.value,

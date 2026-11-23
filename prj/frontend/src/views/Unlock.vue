@@ -1,4 +1,5 @@
 <script setup>
+import {themeState} from '@/theme'
 import {ref} from 'vue'
 import {ElMessage} from 'element-plus'
 import {useAppStore} from '@/store'
@@ -35,7 +36,7 @@ async function doUnlock() {
     <div class="wash wash-left" />
     <div class="wash wash-right" />
     <div class="glint" />
-    <div class="unlock-card">
+    <div class="unlock-card"><span v-if="themeState.name === 'sakura'" class="starling unlock-starling" aria-hidden="true" />
       <div class="brand-row">
         <h2 class="brand">Xx1ServerManager2</h2>
       </div>
