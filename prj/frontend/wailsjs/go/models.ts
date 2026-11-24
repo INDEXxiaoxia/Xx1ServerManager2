@@ -1,6 +1,20 @@
 export namespace main {
 	
-	export class RecentVersion {
+	export class BackgroundPreview {
+	    name: string;
+	    data: string;
+
+	    static createFrom(source: any = {}) {
+	        return new BackgroundPreview(source);
+	    }
+
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.name = source["name"];
+	        this.data = source["data"];
+	    }
+	}
+export class RecentVersion {
 	    Tag: string;
 	    Date: string;
 	    Body: string;

@@ -1,4 +1,13 @@
 <script setup>
+import {enabled as backgroundEnabled, opacity as backgroundOpacity, imageName, uploadBackground} from '@/utils/background'
+const uploadingBackground = ref(false)
+async function selectBackground() {
+  if (uploadingBackground.value) return
+  uploadingBackground.value = true
+  try { await uploadBackground() }
+  catch (error) { ElMessage.error('背景图片保存失败：' + (error.message || error)) }
+  finally { uploadingBackground.value = false }
+}
 import ReleaseHistory from '@/components/ReleaseHistory.vue'
 import {showImageHash} from '@/utils/display-options'
 import {ref, reactive, onMounted} from 'vue'
@@ -210,6 +219,15 @@ async function setPassword() {
           <el-input-number v-model="settings.commandTimeout" :min="5" :max="300" />
         </el-form-item>
         <el-form-item label="容器列表"><el-checkbox v-model="showImageHash">显示镜像短 hash</el-checkbox></el-form-item>
+        <el-form-item label="自定义背景">
+          <el-switch v-model="backgroundEnabled" :disabled="!imageName" aria-label="启用自定义背景" />
+          <el-button style="margin:0 12px" :loading="uploadingBackground" @click="selectBackground">{{ imageName ? '更换图片' : '选择图片' }}</el-button>
+          <span class="text-muted">{{ imageName || 'JPG / PNG / WebP' }}</span>
+        </el-form-item>
+        <el-form-item label="背景图片不透明度">
+          <el-slider v-model="backgroundOpacity" style="width:min(220px,60%)" :disabled="!backgroundEnabled" aria-label="背景图片不透明度" />
+          <span style="margin-left:16px">{{ backgroundOpacity }}%</span>
+        </el-form-item>
         <el-form-item label="主题">
           <el-select v-model="settings.theme" style="width: 200px" @change="onThemeChange">
             <el-option v-for="t in THEMES" :key="t.name" :label="t.label" :value="t.name">

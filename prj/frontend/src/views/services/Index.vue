@@ -1,4 +1,5 @@
 <script setup>
+import ProcessMemory from '../ops/ProcessMemory.vue'
 import {themeState} from '@/theme'
 import {ordered, dragRow} from '@/utils/list-order'
 
@@ -8,6 +9,7 @@ import {useRoute} from 'vue-router'
 import {ElMessage, ElMessageBox} from 'element-plus'
 import {api} from '@/api'
 
+const tab = ref('processes')
 const route = useRoute()
 const servers = ref([])
 const selectedId = ref(route.query.serverId || localStorage.getItem('xx1.server.services/Index.vue') || '')
@@ -33,18 +35,21 @@ async function loadServers() {
 
 async function loadServices() {
   if (!selectedId.value) return
+  const id = selectedId.value
+  services.value = []
   loading.value = true
   try {
-    services.value = await api.getServicesWithEnabled(selectedId.value)
+    const rows = await api.getServicesWithEnabled(id)
+    if (id === selectedId.value) services.value = rows
   } catch (e) {
     ElMessage.error('加载服务失败：' + e)
   } finally {
-    loading.value = false
+    if (id === selectedId.value) loading.value = false
   }
 }
 
 async function onChange() {
-  await loadServices()
+  if (tab.value === 'services') await loadServices()
 }
 
 function stateType(srv) {
@@ -76,7 +81,7 @@ async function showStatus(row) {
 
 onMounted(async () => {
   await loadServers()
-  await loadServices()
+  if (tab.value === 'services') await loadServices()
 })
 </script>
 
@@ -86,13 +91,18 @@ onMounted(async () => {
       <div class="flex-between">
         <div class="flex-between" style="gap: 12px">
           <GroupedServerSelect v-model="selectedId" placeholder="选择服务器" @change="onChange" style="width: 240px" :servers="servers" />
-          <el-input v-model="keyword" placeholder="搜索服务" clearable style="width: 220px" />
+          <el-input v-if="tab === 'services'" v-model="keyword" placeholder="搜索服务" clearable style="width: 220px" />
         </div>
-        <el-button :loading="loading" @click="loadServices">刷新</el-button>
+        <el-button v-if="tab === 'services'" :loading="loading" @click="loadServices">刷新</el-button>
       </div>
     </div>
 
-    <div class="card">
+    <el-tabs v-model="tab" @tab-change="name => { if (name === 'services') loadServices() }">
+      <el-tab-pane label="内存与进程" name="processes" />
+      <el-tab-pane label="服务管理" name="services" />
+    </el-tabs>
+    <ProcessMemory v-if="tab === 'processes' && selectedId" :key="selectedId" :server-id="selectedId" />
+    <div v-if="tab === 'services'" class="card">
       <el-table row-key="name" :data="ordered(filtered(), 'services:'+selectedId, 'name')" v-loading="loading" :element-loading-text="themeState.name === 'sakura' ? '正在读取服务列表…' : undefined" stripe>
         <el-table-column width="36" label=""><template #default="{row}"><span class="drag-grip" v-bind="dragRow(filtered(), 'services:'+selectedId, row, 'name')">⠿</span></template></el-table-column>
         <el-table-column prop="name" label="服务名" min-width="200" class-name="mono" />

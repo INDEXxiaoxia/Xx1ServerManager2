@@ -16,14 +16,15 @@ import (
 
 // TerminalSession 交互式 SSH 终端会话
 type TerminalSession struct {
-	mu       sync.Mutex
-	ID       string
-	ServerID string
-	client   *sshx.Client
-	sess     *ssh.Session
-	stdin    io.Writer
-	out      io.ReadCloser
-	closed   bool
+	directoryMu sync.RWMutex
+	mu          sync.Mutex
+	ID          string
+	ServerID    string
+	client      *sshx.Client
+	sess        *ssh.Session
+	stdin       io.Writer
+	out         io.ReadCloser
+	closed      bool
 
 	// tail 最近若干 KB 的原始输出（含 ANSI），供 AI 读取终端内容使用。
 	// 输出本身仍然实时推给前端 xterm，这里只是额外留一份可回看的副本。
@@ -312,7 +313,9 @@ func (a *App) TerminalClose(id string) error {
 		ts.out.Close()
 	}
 	ts.sess.Close()
+	ts.directoryMu.Lock()
 	ts.client.Close()
+	ts.directoryMu.Unlock()
 	return nil
 }
 

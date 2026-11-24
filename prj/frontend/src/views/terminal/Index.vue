@@ -8,6 +8,7 @@ import {FitAddon} from '@xterm/addon-fit'
 import 'xterm/css/xterm.css'
 import {api, events} from '@/api'
 import {themeState, getTerminalTheme} from '@/theme'
+import DirectoryPicker from './DirectoryPicker.vue'
 import QuickPanel from './QuickPanel.vue'
 
 // 组件名供 Layout 的 <keep-alive :include> 匹配：切到其他页面时本页不销毁，
@@ -237,6 +238,40 @@ async function openNew(serverId, container = null) {
   refitAll()
 }
 
+const picker = ref(null)
+function eligible(tab) {
+  return tab?.connected && tab.termId && !tab.container && !syncMode.value &&
+    tabs.value.length === 1 && activeKey.value === tab.key && !takeoverFull.value &&
+    !takeover.value.busyKeys?.includes(tab.key)
+}
+function cdLine(term) {
+  const b = term.buffer.active
+  if (b.type !== 'normal') return ''
+  const line = b.getLine(b.baseY + b.cursorY)
+  if (!line || line.translateToString(true, b.cursorX).trim()) return ''
+  const text = line.translateToString(false, 0, b.cursorX)
+  return /(?:^|[#$%>❯➜]\s*)cd *$/u.test(text) ? text : ''
+}
+function closePicker(focus = true) {
+  const current = picker.value
+  picker.value = null
+  if (current && focus) terms.get(current.key)?.focus()
+}
+function chooseDirectory(name) {
+  const current = picker.value
+  if (!current) return
+  const tab = tabs.value.find(t => t.key === current.key)
+  const term = terms.get(current.key)
+  if (eligible(tab) && cdLine(term) === current.line) {
+    tab.resetTyped?.()
+    const path = "./" + name.replaceAll("'", "'\\''")
+    ignoreSessionError(api.terminalWrite(tab.termId, " '" + path + "'\r"))
+  }
+  closePicker()
+}
+watch(() => picker.value && eligible(tabs.value.find(t => t.key === picker.value.key)), ok => {
+  if (picker.value && !ok) closePicker(false)
+})
 async function initTerminal(key) {
   const tab = tabs.value.find(t => t.key === key)
   const el = document.getElementById('term-' + key)
@@ -249,6 +284,7 @@ async function initTerminal(key) {
     cursorStyle: 'block',
     // 保留鼠标拖拽选择文本的能力（关掉后左键选择交给 xterm，而不是被应用独占）
     rightClickSelectsWord: false,
+    minimumContrastRatio: themeState.name === 'sakura' ? 4.5 : 1,
     theme: getTerminalTheme(themeState.name)
   })
   const fit = new FitAddon()
@@ -265,7 +301,24 @@ async function initTerminal(key) {
   })
 
   // Ctrl+Shift+C 复制选中内容（Ctrl+C 保持为发送给远端的中断信号 SIGINT）
+  let typed = ''
+  tab.resetTyped = () => { typed = '' }
   term.attachCustomKeyEventHandler((ev) => {
+    if (ev.type === 'keydown' && ev.key === 'Tab' && !ev.shiftKey && !ev.ctrlKey && !ev.altKey && !ev.metaKey &&
+        !ev.isComposing && eligible(tab) && /^cd *$/.test(typed)) {
+      const line = cdLine(term)
+      if (line) {
+        const b = term.buffer.active
+        const rect = term.element.querySelector('.xterm-screen').getBoundingClientRect()
+        const y = rect.top + (b.cursorY + 1) * rect.height / term.rows
+        picker.value = {key, session: tab.termId, line,
+          x: Math.max(0, Math.min(innerWidth - 250, rect.left + b.cursorX * rect.width / term.cols)),
+          y: Math.max(0, y + 240 > innerHeight ? y - rect.height / term.rows - 240 : y)}
+        ev.preventDefault()
+        ev.stopPropagation()
+        return false
+      }
+    }
     if (ev.type === 'keydown' && ev.ctrlKey && ev.shiftKey && (ev.key === 'C' || ev.key === 'c')) {
       copySelection(term)
       return false
@@ -289,6 +342,7 @@ async function initTerminal(key) {
   // 而同步模式下其他窗口的输出是被动写进来的，视口会停在原处、新行被顶上去，
   // 表现为"最后一行（提示符）不出现，按一下回车才出来"。
   tab._offData = events.on('terminal:data:' + termId, (data) => {
+    if (picker.value?.key === key) closePicker()
     term.write(data)
     term.scrollToBottom()
   })
@@ -318,6 +372,9 @@ async function initTerminal(key) {
       }
       return
     }
+    if (/^[\r\n\x03\x15]$/.test(data)) typed = ''
+    else if (typed !== null && data === '\x7f') typed = typed.slice(0, -1)
+    else if (typed !== null) typed = /^(?:c|cd *)$/.test(typed + data) && typed.length < 64 ? typed + data : null
     if (activeKey.value !== key) activeKey.value = key
     ignoreSessionError(api.terminalWrite(termId, data))
     if (syncMode.value) broadcastInput(key, data)
@@ -824,6 +881,7 @@ async function confirmAdd() {
 watch(() => themeState.name, () => {
   const t = getTerminalTheme(themeState.name)
   terms.forEach(term => {
+    term.options.minimumContrastRatio = themeState.name === 'sakura' ? 4.5 : 1
     term.options.theme = t
   })
 })
@@ -882,6 +940,7 @@ onActivated(async () => {
 // （输出仍在写入缓冲区，渲染由 xterm 的可见性暂停/恢复机制接管），
 // 这里只摘掉不该跨页面生效的全局监听。
 onDeactivated(() => {
+  closePicker(false)
   unbindGlobalListeners()
   closeMenu()
 })
@@ -919,6 +978,7 @@ function onGlobalKeydown(ev) {
 
 <template>
   <div ref="pageRoot" class="terminal-page">
+    <DirectoryPicker v-if="picker" :session="picker.session" :x="picker.x" :y="picker.y" @close="closePicker" @choose="chooseDirectory" />
     <!-- 标签栏：新建按钮跟随在最后一个标签右侧，标签过多时贴着标签栏最右侧 -->
     <div class="term-tabbar">
       <div ref="tabsRef" class="term-tabs">

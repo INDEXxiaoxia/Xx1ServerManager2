@@ -1,4 +1,5 @@
 <script setup>
+import {backgroundStyle} from '@/utils/background'
 import {themeState} from '@/theme'
 import TransferCenter from "@/components/TransferCenter.vue"
 import {computed, ref, watch, onMounted, onBeforeUnmount} from 'vue'
@@ -114,7 +115,7 @@ async function lock() {
           </el-button>
         </div>
       </el-header>
-      <el-main class="main">
+      <el-main class="main" :style="backgroundStyle">
         <!-- 常驻外壳：给页面根元素提供高度上下文（页面根用 height:100% 撑满可视区），
              它本身不参与过渡，也永远不携带 transform。 -->
         <div class="page-shell">

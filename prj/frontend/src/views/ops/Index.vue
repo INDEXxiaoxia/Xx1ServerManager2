@@ -21,7 +21,7 @@ const activeTool = ref('')
 // 工具清单：以后新增"妙妙小工具"只要往这里加一项 + 挂一个组件即可。
 // features 用一句话讲清"这个工具能帮你做什么"，卡片上直接展示。
 const tools = [
-  {key:'services', name:'服务管理', desc:'查看与管理 systemd 服务', icon:'Setting', ready:true, features:['启动、停止和重启服务','查看服务状态']},
+  {key:'services', name:'服务、内存与进程', desc:'管理系统服务，排查内存和 CPU 占用', icon:'Setting', ready:true, features:['启动、停止和重启服务','进程排行与内存变化','内核 OOM 记录']},
   {
     key: 'disk',
     name: '磁盘空间检测',
@@ -33,14 +33,6 @@ const tools = [
       '目录逐层下钻到具体文件',
       '结论与处置命令可一键复制'
     ]
-  },
-  {
-    key: 'mem',
-    name: '内存与进程',
-    desc: '内存去哪了、谁在吃 CPU，以及有没有泄漏趋势',
-    icon: 'Cpu',
-    ready: false,
-    features: ['按内存/CPU 排序的进程 TOP', '单进程增长趋势', 'OOM 杀手记录']
   },
   {
     key: 'logs',

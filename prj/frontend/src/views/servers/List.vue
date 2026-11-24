@@ -32,6 +32,8 @@ const filtered = computed(() => {
   })
 })
 
+const tableRows = computed(() => ordered(filtered.value, 'servers', 'id'))
+
 async function load() {
   loading.value = true
   try {
@@ -125,7 +127,7 @@ function handleMore(command, row) {
         </div>
       </div>
 
-      <el-table @row-dblclick="(row, column) => { if (column.property) goTerminal(row) }" row-key="id" :data="ordered(filtered, 'servers', 'id')" v-loading="loading" @selection-change="v => selected = v" stripe>
+      <el-table @row-dblclick="(row, column) => { if (column.property) goTerminal(row) }" row-key="id" :data="tableRows" v-loading="loading" @selection-change="v => selected = v" stripe>
         <el-table-column width="36" label=""><template #default="{row}"><span class="drag-grip" v-bind="dragRow(filtered, 'servers', row, 'id')">⠿</span></template></el-table-column>
         <el-table-column type="selection" width="45" />
         <el-table-column prop="name" label="名称" min-width="140" show-overflow-tooltip />

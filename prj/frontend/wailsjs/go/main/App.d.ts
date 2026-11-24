@@ -27,7 +27,11 @@ export function ChangeMasterPassword(arg1:string,arg2:string):Promise<Record<str
 
 export function ChmodRemote(arg1:string,arg2:string,arg3:number):Promise<void>;
 
+export function ChooseBackgroundImage():Promise<main.BackgroundPreview>;
+
 export function CloseFileClients():Promise<void>;
+
+export function ConvertSavedBackground(arg1:string,arg2:string):Promise<main.BackgroundPreview>;
 
 export function DeleteGroup(arg1:string):Promise<number>;
 
@@ -162,6 +166,8 @@ export function StopAllMonitors():Promise<void>;
 export function StopMonitor(arg1:string):Promise<void>;
 
 export function TerminalClose(arg1:string):Promise<void>;
+
+export function TerminalDirectoryCandidates(arg1:string,arg2:string,arg3:number):Promise<Array<string>>;
 
 export function TerminalOpen(arg1:string,arg2:number,arg3:number):Promise<string>;
 

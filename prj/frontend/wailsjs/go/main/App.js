@@ -50,8 +50,16 @@ export function ChmodRemote(arg1, arg2, arg3) {
   return window['go']['main']['App']['ChmodRemote'](arg1, arg2, arg3);
 }
 
+export function ChooseBackgroundImage() {
+  return window['go']['main']['App']['ChooseBackgroundImage']();
+}
+
 export function CloseFileClients() {
   return window['go']['main']['App']['CloseFileClients']();
+}
+
+export function ConvertSavedBackground(arg1, arg2) {
+  return window['go']['main']['App']['ConvertSavedBackground'](arg1, arg2);
 }
 
 export function DeleteGroup(arg1) {
@@ -320,6 +328,10 @@ export function StopMonitor(arg1) {
 
 export function TerminalClose(arg1) {
   return window['go']['main']['App']['TerminalClose'](arg1);
+}
+
+export function TerminalDirectoryCandidates(arg1, arg2, arg3) {
+  return window['go']['main']['App']['TerminalDirectoryCandidates'](arg1, arg2, arg3);
 }
 
 export function TerminalOpen(arg1, arg2, arg3) {
