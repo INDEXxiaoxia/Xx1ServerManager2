@@ -708,7 +708,15 @@ func (c *Client) MakeDirs(path string) error {
 	if err != nil {
 		return err
 	}
-	return sc.MkdirAll(path)
+	err = sc.MkdirAll(path)
+	if err != nil && IsPermissionError(err.Error()) {
+		code, out, msg := c.ExecCommand("mkdir -p -- "+shellQuote(path), 30, false)
+		if code != 0 {
+			return fmt.Errorf("创建目录失败：%s %s", out, msg)
+		}
+		return nil
+	}
+	return err
 }
 
 // Rename 重命名/移动

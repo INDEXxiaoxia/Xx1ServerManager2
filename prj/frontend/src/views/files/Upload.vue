@@ -14,6 +14,8 @@ const props = defineProps({
   selectedServers: {type: Array, default: () => []}
 })
 
+import {useTransfers} from '@/store/transfers'
+const transfers = useTransfers()
 const store = useBatchStore()
 const selectedServers = computed(() => props.selectedServers || [])
 
@@ -37,12 +39,12 @@ function getServerGroupColor(server) {
   return groupColorOf(groups.value, groupIdOf(server))
 }
 
-async function pickFile() {
-  const path = await api.selectLocalFile()
+async function pickFile(directory = false) {
+  const path = directory ? await window.go.main.App.SelectUploadDirectory() : await api.selectLocalFile()
   if (!path) return
   const name = path.split(/[\\/]/).pop()
   if (!localFiles.value.some(x => x.path === path)) {
-    localFiles.value.push({path, name})
+    localFiles.value.push({path, name, directory})
   }
 }
 
@@ -56,6 +58,11 @@ async function start() {
   if (!localFiles.value.length) { ElMessage.warning('请选择本地文件'); return }
   if (!remoteDir.value) { ElMessage.warning('请输入远程目录'); return }
   try {
+    if (localFiles.value.some(f=>f.directory)) {
+      await transfers.addPaths(selectedServers.value,localFiles.value.map(f=>f.path),remoteDir.value)
+      ElMessage.success('已加入上传任务')
+      return
+    }
     store.beginUpload()
     const sid = await api.startBatchUpload(
       selectedServers.value.map(s => s.id),
@@ -104,7 +111,8 @@ const taskList = computed(() => Object.values(tasks.value || {}))
           </el-form-item>
           <el-form-item label="本地文件">
             <div class="file-wrap">
-              <el-button type="primary" plain @click="pickFile">选择文件</el-button>
+              <el-button type="primary" plain @click="pickFile(false)">选择文件</el-button>
+              <el-button plain @click="pickFile(true)">选择目录</el-button>
               <el-tag v-for="f in localFiles" :key="f.path" closable class="file-tag" @close="removeLocalFile(f.path)">
                 {{ f.name }}
               </el-tag>

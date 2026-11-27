@@ -3,12 +3,15 @@ import {backgroundStyle} from '@/utils/background'
 import {themeState} from '@/theme'
 import TransferCenter from "@/components/TransferCenter.vue"
 import {computed, ref, watch, onMounted, onBeforeUnmount} from 'vue'
-import {useRoute} from 'vue-router'
-import {ElMessage, ElMessageBox} from 'element-plus'
+import {scheduleUpdateChecks} from '@/utils/updates'
+import {useRoute,useRouter} from 'vue-router'
+import {ElMessage, ElMessageBox, ElNotification} from 'element-plus'
 import {useBatchStore} from '@/store/batch'
 import {useAppStore} from '@/store'
 
 const route = useRoute()
+const router = useRouter()
+let stopUpdates, updateNotice
 const collapsed = ref(false)
 const batchStore = useBatchStore()
 const appStore = useAppStore()
@@ -21,8 +24,21 @@ const KEEP_ALIVE = ['TerminalPage', 'OpsPage']
 // 上传/执行进度也会持续记录，回到批量操作页不会出现状态断档
 onMounted(() => {
   batchStore.bindEvents()
+  stopUpdates = scheduleUpdateChecks(tag => {
+    updateNotice = ElNotification({
+      title: '发现新版本 ' + tag,
+      message: '请前往「设置 → 版本与更新」下载。点击此处打开。',
+      position: 'bottom-right', duration: 8000, type: 'info',
+      onClick: () => {
+        router.push({path:'/settings', query:{tab:'updates', version:tag}})
+        updateNotice?.close()
+      }
+    })
+  })
 })
 onBeforeUnmount(() => {
+  stopUpdates?.()
+  updateNotice?.close()
   batchStore.unbindEvents()
 })
 
@@ -135,7 +151,7 @@ async function lock() {
           </router-view>
         </div>
       </el-main>
-      <TransferCenter />
+      <TransferCenter v-if="route.path === '/files' || (route.path === '/batch' && batchStore.tab === 'upload')" />
     </el-container>
   </el-container>
 </template>

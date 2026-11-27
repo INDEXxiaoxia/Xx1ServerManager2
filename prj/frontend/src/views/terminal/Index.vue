@@ -1184,7 +1184,7 @@ function onGlobalKeydown(ev) {
     <el-dialog
       v-model="dialogVisible"
       title="选择服务器"
-      width="420px"
+      width="min(630px,95vw)"
       append-to-body
       @closed="closeMenu"
     >

@@ -137,6 +137,7 @@
 :root[data-theme="sakura"] .star-duty .starling {width:44px;height:36px;align-self:flex-end}
 :root[data-theme="sakura"] .term-tabbar {background:linear-gradient(90deg,#372338,#563751);color:#f5eafa}
 :root[data-theme="sakura"] .term-tab {color:#f1deed;border-color:#84617f}
+:root[data-theme="sakura"] .term-tab:not(.active):hover {background:#684961;color:#fff6fc}
 :root[data-theme="sakura"] .term-tab.active {background:#704d70;color:white}
 :root[data-theme="sakura"] .card,:root[data-theme="sakura"] .tool-card {border-radius:8px;border:1px solid var(--card-border)}
 :root[data-theme="sakura"] .el-button--primary:not(.is-text):not(.is-link):not(.is-plain) {background:linear-gradient(#bc698f,#a04d79);border-color:#984d71}

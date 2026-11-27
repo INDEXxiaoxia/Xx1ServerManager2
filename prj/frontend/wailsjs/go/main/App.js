@@ -98,6 +98,10 @@ export function DownloadUpdate(arg1) {
   return window['go']['main']['App']['DownloadUpdate'](arg1);
 }
 
+export function DownloadUpdatePackage(arg1, arg2) {
+  return window['go']['main']['App']['DownloadUpdatePackage'](arg1, arg2);
+}
+
 export function DrillDiskDir(arg1, arg2, arg3, arg4) {
   return window['go']['main']['App']['DrillDiskDir'](arg1, arg2, arg3, arg4);
 }
@@ -210,6 +214,10 @@ export function ListServices(arg1) {
   return window['go']['main']['App']['ListServices'](arg1);
 }
 
+export function ListUploadEntries(arg1) {
+  return window['go']['main']['App']['ListUploadEntries'](arg1);
+}
+
 export function Lock() {
   return window['go']['main']['App']['Lock']();
 }
@@ -220,6 +228,14 @@ export function MakeRemoteDir(arg1, arg2) {
 
 export function OpenConfigDir() {
   return window['go']['main']['App']['OpenConfigDir']();
+}
+
+export function PreviewDropLevel(arg1, arg2) {
+  return window['go']['main']['App']['PreviewDropLevel'](arg1, arg2);
+}
+
+export function PreviewRemoteImage(arg1, arg2) {
+  return window['go']['main']['App']['PreviewRemoteImage'](arg1, arg2);
 }
 
 export function ReadRemoteTextFile(arg1, arg2, arg3) {
@@ -254,6 +270,10 @@ export function SaveAISettings(arg1) {
   return window['go']['main']['App']['SaveAISettings'](arg1);
 }
 
+export function SaveContainerLogs(arg1, arg2, arg3, arg4) {
+  return window['go']['main']['App']['SaveContainerLogs'](arg1, arg2, arg3, arg4);
+}
+
 export function SaveGroup(arg1) {
   return window['go']['main']['App']['SaveGroup'](arg1);
 }
@@ -284,6 +304,10 @@ export function SelectLocalFile() {
 
 export function SelectLocalSavePath(arg1) {
   return window['go']['main']['App']['SelectLocalSavePath'](arg1);
+}
+
+export function SelectUploadDirectory() {
+  return window['go']['main']['App']['SelectUploadDirectory']();
 }
 
 export function ServiceAction(arg1, arg2, arg3) {

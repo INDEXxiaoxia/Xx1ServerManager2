@@ -65,6 +65,9 @@ func (a *App) requestRoot(sv *models.Server) (string, error) {
 		c.RefreshRoot = nil
 		c.RequestRoot = nil
 		c.DefaultRoot = true
+		if answer.Password == "" {
+			answer.Password = sv.Password
+		}
 		c.SudoPassword = answer.Password
 		if err := c.Connect(); err != nil {
 			return "", err

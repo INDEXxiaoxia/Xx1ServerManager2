@@ -88,9 +88,9 @@ onMounted(async () => {
 <template>
   <div class="page-container">
     <div class="card mb-12">
-      <div class="flex-between">
-        <div class="flex-between" style="gap: 12px">
-          <GroupedServerSelect v-model="selectedId" placeholder="选择服务器" @change="onChange" style="width: 240px" :servers="servers" />
+      <div class="flex-between service-controls">
+        <div class="flex-between service-controls" style="gap: 12px">
+          <GroupedServerSelect v-model="selectedId" placeholder="选择服务器" @change="onChange" :servers="servers" />
           <el-input v-if="tab === 'services'" v-model="keyword" placeholder="搜索服务" clearable style="width: 220px" />
         </div>
         <el-button v-if="tab === 'services'" :loading="loading" @click="loadServices">刷新</el-button>
@@ -150,6 +150,7 @@ onMounted(async () => {
 </template>
 
 <style scoped>
+.service-controls{flex-wrap:wrap;max-width:100%;gap:10px}
 .op-bar {
   display: flex;
   align-items: center;

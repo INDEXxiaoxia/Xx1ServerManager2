@@ -1,5 +1,5 @@
 <script setup>
-import {ref, reactive, computed, watch, onMounted, onActivated, onBeforeUnmount, nextTick} from 'vue'
+import {h, ref, reactive, computed, watch, onMounted, onActivated, onBeforeUnmount, nextTick} from 'vue'
 import {ElMessage, ElMessageBox} from 'element-plus'
 import {api, events} from '@/api'
 import {writeClipboard} from '@/utils/clipboard'
@@ -217,8 +217,10 @@ async function setMode(v) {
   } else if (v === 'exec') {
     try {
       await ElMessageBox.confirm(
-        '直接执行模式下，AI 给出的命令会**在当前终端里自动执行**（每次一条，执行完停下并把结果回读给 AI）。\n\n' +
-        '命令可能修改或删除服务器上的内容，建议先在测试服务器上确认效果。',
+        h('div', [
+          h('p', ['直接执行模式下，AI 给出的命令会', h('strong', '在当前终端里自动执行'), '（每次一条，执行完停下并把结果回读给 AI）。']),
+          h('p', '命令可能修改或删除服务器上的内容，建议先在测试服务器上确认效果。')
+        ]),
         '切换到「直接执行」',
         {type: 'warning', confirmButtonText: '我知道了', cancelButtonText: '取消'}
       )

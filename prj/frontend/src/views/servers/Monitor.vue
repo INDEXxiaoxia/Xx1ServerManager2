@@ -370,7 +370,7 @@ onBeforeUnmount(() => {
     <div class="card mb-12">
       <div class="flex-between">
         <h3>实时监控</h3>
-        <GroupedServerSelect v-model="selectedId" placeholder="选择服务器" @change="onChange" style="width: 260px" :servers="servers" />
+        <GroupedServerSelect v-model="selectedId" placeholder="选择服务器" @change="onChange" :servers="servers" />
       </div>
     </div>
 

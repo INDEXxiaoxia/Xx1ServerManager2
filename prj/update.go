@@ -58,6 +58,13 @@ func (a *App) LatestVersion() (string, error) {
 	return release.Tag, err
 }
 func (a *App) DownloadUpdate(expected string) (string, error) {
+	return a.DownloadUpdatePackage(expected, false)
+}
+func (a *App) DownloadUpdatePackage(expected string, portable bool) (string, error) {
+	assetName := installerName
+	if portable {
+		assetName = "ServerManager2.exe"
+	}
 	release, err := fetchRelease()
 	if err != nil {
 		return "", err
@@ -66,15 +73,15 @@ func (a *App) DownloadUpdate(expected string) (string, error) {
 		return "", fmt.Errorf("版本已变化，请重新检查更新")
 	}
 	for _, asset := range release.Assets {
-		if asset.Name != installerName {
+		if asset.Name != assetName {
 			continue
 		}
-		path, err := runtime.SaveFileDialog(a.ctx, runtime.SaveDialogOptions{Title: "保存更新安装包", DefaultFilename: "ServerManager2-" + release.Tag + "-installer.exe"})
+		path, err := runtime.SaveFileDialog(a.ctx, runtime.SaveDialogOptions{Title: "保存更新安装包", DefaultFilename: assetName})
 		if err != nil || path == "" {
 			return "", err
 		}
 		client := http.Client{Transport: releaseTransport, Timeout: 10 * time.Minute}
-		resp, err := client.Get("https://github.com/" + releaseRepo + "/releases/download/" + release.Tag + "/" + installerName)
+		resp, err := client.Get("https://github.com/" + releaseRepo + "/releases/download/" + release.Tag + "/" + assetName)
 		if err != nil {
 			return "", err
 		}

@@ -15,5 +15,10 @@ const data = computed(() => ordered(orderedGroups(props.servers, groups.value), 
 function change(value) { emit('update:modelValue', value); emit('change', value) }
 </script>
 <template>
-  <el-cascader :model-value="modelValue" :options="data" :props="{emitPath: false}" filterable placeholder="选择分组 / 服务器" @change="change" />
+  <el-cascader class="group-server-select" popper-class="group-server-popup" :model-value="modelValue" :options="data" :props="{emitPath: false}" placeholder="选择分组 / 服务器" @change="change" />
 </template>
+
+<style>
+.group-server-select.el-cascader {width:min(264px,100%);flex:0 0 auto;max-width:100%}
+.group-server-popup .el-cascader-menu {min-width:min(216px,44vw)}
+</style>

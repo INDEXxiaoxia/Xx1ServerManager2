@@ -145,7 +145,7 @@ onMounted(async () => { servers.value = await api.listServers(); if (!servers.va
 <style scoped>
 .container-head {display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;margin-bottom:12px}
 .container-filters {display:flex;align-items:center;gap:8px;flex-wrap:wrap}
-.server-select {width:240px}.engine-select {width:110px}.container-search {width:220px}
+.engine-select {width:110px}.container-search {width:220px}
 .op-bar {display:flex;align-items:center;white-space:nowrap}
 .op-bar .el-button {padding-left:6px;padding-right:6px;margin-left:0}
 .more-btn {color:var(--ink-3)}

@@ -1,9 +1,18 @@
 <script setup>
 import {ref,computed,watch,nextTick,onMounted,onBeforeUnmount} from 'vue'
+import {ElMessage} from 'element-plus'
 import {api,events} from '@/api'
 import {findLogMatches, nextLogMatch} from '@/utils/log-search'
 const props=defineProps({serverId:String,engine:String,container:Object})
 const mode=ref('recent'),lines=ref(200),text=ref(''),error=ref(''),search=ref(''),searchOpen=ref(false),box=ref(null),searchRef=ref(null),follow=ref(true)
+const exportOpen=ref(false), exportSize=ref(10), exporting=ref(false)
+async function saveLogs(){
+ exporting.value=true
+ try {
+   const path=await window.go.main.App.SaveContainerLogs(props.serverId,props.engine,props.container.ID,exportSize.value)
+   if(path){exportOpen.value=false;ElMessage.success('日志已保存到 '+path)}
+ }catch(e){ElMessage.error(String(e))}finally{exporting.value=false}
+}
 let id='',off=null,revision=0
 const committedSearch=ref(''),activeStart=ref(-1),matchRef=ref(null)
 const matches=computed(()=>findLogMatches(text.value,committedSearch.value))
@@ -55,7 +64,7 @@ onBeforeUnmount(()=>{stop();window.removeEventListener('keydown',find)})
 </script>
 <template><div class="logs" tabindex="0">
  <div class="log-overlays">
-  <div class="log-tools"><el-radio-group v-model="mode" size="small"><el-radio-button value="live">实时</el-radio-button><el-radio-button value="recent">最近</el-radio-button></el-radio-group><el-select v-model="lines" size="small" style="width:95px"><el-option v-for="n in [200,500,1000]" :value="n" :label="n+' 行'" :key="n" /></el-select><el-button size="small" @click="searchOpen ? closeSearch() : openSearch()">搜索 Ctrl F</el-button><el-checkbox v-model="follow" @change="scroll">跟随</el-checkbox></div>
+  <div class="log-tools"><el-radio-group v-model="mode" size="small"><el-radio-button value="live">实时</el-radio-button><el-radio-button value="recent">最近</el-radio-button></el-radio-group><el-select v-model="lines" size="small" style="width:95px"><el-option v-for="n in [200,500,1000]" :value="n" :label="n+' 行'" :key="n" /></el-select><el-button size="small" @click="searchOpen ? closeSearch() : openSearch()">搜索 Ctrl F</el-button><el-button size="small" :loading="exporting" @click="exportOpen=true">{{ exporting ? '下载中...' : '下载日志' }}</el-button><el-checkbox v-model="follow" @change="scroll">跟随</el-checkbox></div>
   <form v-if="searchOpen" class="log-search" role="search" @submit.prevent="submitSearch" @keydown.esc.stop="closeSearch">
    <el-input ref="searchRef" v-model="search" clearable size="small" placeholder="搜索日志" aria-label="搜索日志" class="search-input" @keydown.enter.prevent.stop="submitSearch" />
    <span class="match-count" aria-live="polite">{{committedSearch ? (activeIndex+1)+' / '+matches.length : ''}}</span>
@@ -66,6 +75,7 @@ onBeforeUnmount(()=>{stop();window.removeEventListener('keydown',find)})
  </div>
  <div v-if="error" class="log-error">{{error}}</div>
  <pre ref="box" class="log-content" @scroll="onScroll"><template v-if="activeMatch">{{text.slice(0,activeMatch.start)}}<mark ref="matchRef" class="log-match">{{text.slice(activeMatch.start,activeMatch.end)}}</mark>{{text.slice(activeMatch.end)}}</template><template v-else>{{text || '等待日志…'}}</template></pre>
+ <el-dialog v-model="exportOpen" title="下载最近的容器日志" append-to-body width="min(400px,94vw)"><el-radio-group v-model="exportSize"><el-radio-button v-for="n in [1,10,50]" :key="n" :value="n">{{n}} MB</el-radio-button></el-radio-group><template #footer><el-button type="primary" :loading="exporting" @click="saveLogs">{{ exporting ? '下载中...' : '选择保存位置' }}</el-button></template></el-dialog>
  </div></template>
 <style scoped>
 .logs{height:100%;min-height:200px;position:relative;display:flex;flex-direction:column;background:var(--terminal-bg);color:var(--terminal-fg);border-radius:8px;overflow:hidden}

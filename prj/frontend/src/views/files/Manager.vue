@@ -243,7 +243,19 @@ function goUp() {
   jumpTo('/' + parts.join('/'))
 }
 
+const preview = ref(null)
+const previewOpen = ref(false)
+let imageRequest = 0
+function isImage(entry) {return !entry.isDir && /\.(png|jpe?g|webp)$/i.test(entry.name)}
+async function showImage(entry) {
+  const request = ++imageRequest
+  preview.value = null
+  previewOpen.value = true
+  try {const result = await window.go.main.App.PreviewRemoteImage(selectedId.value, entry.path); if (request===imageRequest) preview.value=result}
+  catch(e){if(request===imageRequest){previewOpen.value=false;ElMessage.error(String(e))}}
+}
 function openDir(entry) {
+  if(isImage(entry)) return showImage(entry)
   if (entry.isDir) jumpTo(entry.path)
 }
 
@@ -398,14 +410,13 @@ watch(() => transfers.tasks.filter(t => t.status === 'success').length, () => {
 })
 // ---- 上传 / 下载 ----
 const uploadLoading = ref(false)
-async function pickUpload() {
+async function pickUpload(directory = false) {
   const serverId = selectedId.value
   const dir = currentPath.value
   const serverName = servers.value.find(s => s.id === serverId)?.name || serverId
-  const localPath = await api.selectLocalFile()
+  const localPath = directory ? await window.go.main.App.SelectUploadDirectory() : await api.selectLocalFile()
   if (!localPath) return
-  const name = localPath.split(/[\\/]/).pop()
-  try { transfers.add(serverId, serverName, localPath, (dir === '/' ? '' : dir) + '/' + name) }
+  try { await transfers.addPaths([{id:serverId,name:serverName}], [localPath], dir) }
   catch(e) { ElMessage.error(String(e)) }
 }
 
@@ -577,7 +588,38 @@ onMounted(async () => {
   offDirSize = events.on('file:dirsize', onDirSizeEvent)
 })
 
+const drop = ref(null)
+const dropListing = ref(null)
+const dropTrail = ref([])
+const dropError = ref('')
+let dropVersion = 0
+async function previewDrop(trail = []) {
+  const directory = trail.at(-1)?.local || ''
+  const version = ++dropVersion
+  dropTrail.value = trail
+  dropListing.value = null
+  dropError.value = ''
+  try {
+    const list = await window.go.main.App.PreviewDropLevel(directory ? [] : drop.value.paths,directory)
+    if (drop.value && version===dropVersion) dropListing.value = list
+  } catch(e) { if(version===dropVersion) dropError.value=String(e) }
+}
+async function confirmDrop() {
+  const target = drop.value
+  if (!target) return
+  drop.value = null
+  try { await transfers.addPaths([target.server],target.paths,target.directory) }
+  catch(e){ElMessage.error(String(e))}
+}
+onMounted(() => window.runtime.OnFileDrop?.((x,y,paths) => {
+  if (previewOpen.value || drop.value || !paths.length || !document.elementFromPoint(x,y)?.closest('.file-drop-zone') || !selectedId.value) return
+  const server = servers.value.find(s=>s.id===selectedId.value)
+  if (!server) return
+  drop.value = {server:{id:server.id,name:server.name},directory:currentPath.value,paths}
+  previewDrop()
+},true))
 onBeforeUnmount(() => {
+  window.runtime.OnFileDropOff?.()
   offProgress?.()
   offDirSize?.()
 })
@@ -585,6 +627,27 @@ onBeforeUnmount(() => {
 
 <template>
   <div class="page-container">
+    <el-dialog v-model="previewOpen" :title="preview?.name || '图片预览'"><img v-if="preview" draggable="false" @dragstart.prevent.stop @drop.prevent.stop :src="'data:image/jpeg;base64,'+preview.data" style="display:block;max-width:100%;max-height:68vh;margin:auto"><span v-else>正在读取图片…</span></el-dialog>
+    <el-dialog :model-value="!!drop" title="确认拖放上传" width="min(540px,94vw)" @close="drop=null">
+      <template v-if="drop">
+        <div class="drop-target"><el-icon><Upload /></el-icon><div><small>上传目标 · {{drop.server.name}}</small><strong>{{drop.directory}}</strong></div></div>
+        <nav class="drop-trail" aria-label="本地目录">
+          <button @click="previewDrop()">所选项目</button>
+          <template v-for="(part,i) in dropTrail" :key="part.local"><span>›</span><button @click="previewDrop(dropTrail.slice(0,i+1))">{{part.relative}}</button></template>
+          <small v-if="dropListing">{{dropListing.count}} 项</small>
+        </nav>
+        <el-alert v-if="dropError" type="error" :title="dropError" />
+        <div v-else-if="!dropListing">正在读取列表…</div>
+        <p v-else-if="dropListing.count>40">本层共 {{dropListing.count}} 项，仅显示数量。</p>
+        <p v-else-if="!dropListing.count">空目录</p>
+        <div v-else class="drop-list">
+          <component :is="item.directory?'button':'div'" v-for="item in dropListing.items" :key="item.local" class="drop-row" @click="item.directory && previewDrop([...dropTrail,item])">
+            <el-icon><component :is="item.directory?'Folder':'Document'" /></el-icon><span>{{item.relative}}</span><el-icon v-if="item.directory"><ArrowRight /></el-icon>
+          </component>
+        </div>
+      </template>
+      <template #footer><el-button @click="drop=null">取消</el-button><el-button type="primary" :disabled="!dropListing || !!dropError" @click="confirmDrop">确认上传</el-button></template>
+    </el-dialog>
     <!-- 功能条：服务器 / 路径 / 上级 -->
     <div class="top-bar">
       <GroupedServerSelect v-model="selectedId" placeholder="选择服务器" class="server-select" :servers="servers" />
@@ -660,7 +723,7 @@ onBeforeUnmount(() => {
     />
 
     <!-- 目录列表 -->
-    <div class="card">
+    <div class="card file-drop-zone" style="--wails-drop-target:drop">
       <div class="list-head">
         <span class="list-meta">
           共 <b>{{ total }}</b> 项{{ dirCount ? `（${dirCount} 个子目录）` : '' }} · 当前第 {{ currentPage }} 页
@@ -685,7 +748,8 @@ onBeforeUnmount(() => {
           计算全部
         </el-button>
         <el-button size="small" @click="newDirDialog = true">新建目录</el-button>
-        <el-button size="small" type="primary" :loading="uploadLoading" @click="pickUpload">上传文件</el-button>
+        <el-button size="small" type="primary" :loading="uploadLoading" @click="pickUpload(false)">上传文件</el-button>
+        <el-button size="small" @click="pickUpload(true)">上传目录</el-button>
       </div>
 
       <el-table
@@ -740,7 +804,8 @@ onBeforeUnmount(() => {
             <div class="op-bar">
               <!-- 文件：编辑、下载直接展示 -->
               <template v-if="!row.isDir">
-                <el-button size="small" text type="primary" @click="openEditor(row)">编辑</el-button>
+                <el-button v-if="isImage(row)" size="small" text type="primary" @click="showImage(row)">预览</el-button>
+                <el-button v-else size="small" text type="primary" @click="openEditor(row)">编辑</el-button>
                 <el-button size="small" text type="primary" @click="download(row)">下载</el-button>
               </template>
               <!-- 目录：重命名、权限直接展示 -->
@@ -822,14 +887,22 @@ onBeforeUnmount(() => {
 </template>
 
 <style scoped>
+.drop-target,.drop-row,.drop-trail{display:flex;align-items:center;gap:10px}
+.drop-target{background:var(--blue-soft);padding:12px 14px;border-radius:8px;color:var(--ink)}
+.drop-target strong{display:block;overflow-wrap:anywhere}.drop-target small,.drop-trail small{color:var(--ink-3)}
+.drop-trail{padding:12px 0;flex-wrap:wrap}.drop-trail button{font:inherit;color:var(--blue-deep);background:none;border:0;cursor:pointer}.drop-trail small{margin-left:auto}
+.drop-list{max-height:42vh;overflow:auto;border-block:1px solid var(--line)}
+.drop-row{width:100%;padding:8px 10px;color:var(--ink);background:transparent;border:0;text-align:left;font:inherit}
+.drop-row span{flex:1;overflow-wrap:anywhere}.drop-row i{color:var(--blue)}button.drop-row{cursor:pointer}button.drop-row:hover{background:var(--hover-bg)}
+
 /* 功能条：服务器 + 路径输入 + 上级图标按钮，单行紧凑排布 */
 .top-bar {
-  display: flex;
+  display: flex; flex-wrap:wrap;
   align-items: center;
   gap: 10px;
   margin-bottom: 10px;
 }
-.server-select { width: 220px; flex: 0 0 220px; }
+
 .path-input { flex: 1; min-width: 240px; }
 .up-btn { flex: 0 0 auto; }
 

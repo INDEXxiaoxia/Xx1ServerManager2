@@ -51,6 +51,8 @@ export function DownloadFromServer(arg1:string,arg2:string,arg3:string):Promise<
 
 export function DownloadUpdate(arg1:string):Promise<string>;
 
+export function DownloadUpdatePackage(arg1:string,arg2:boolean):Promise<string>;
+
 export function DrillDiskDir(arg1:string,arg2:string,arg3:string,arg4:boolean):Promise<models.DrillResult>;
 
 export function GetAISettings():Promise<models.AISettings>;
@@ -107,11 +109,17 @@ export function ListServers():Promise<Array<models.Server>>;
 
 export function ListServices(arg1:string):Promise<Array<models.SystemService>>;
 
+export function ListUploadEntries(arg1:Array<string>):Promise<Array<main.UploadEntry>>;
+
 export function Lock():Promise<void>;
 
 export function MakeRemoteDir(arg1:string,arg2:string):Promise<void>;
 
 export function OpenConfigDir():Promise<string>;
+
+export function PreviewDropLevel(arg1:Array<string>,arg2:string):Promise<main.DropListing>;
+
+export function PreviewRemoteImage(arg1:string,arg2:string):Promise<main.BackgroundPreview>;
 
 export function ReadRemoteTextFile(arg1:string,arg2:string,arg3:string):Promise<models.TextFileContent>;
 
@@ -129,6 +137,8 @@ export function RunRemoteCommand(arg1:string,arg2:string,arg3:number):Promise<st
 
 export function SaveAISettings(arg1:models.AISettings):Promise<void>;
 
+export function SaveContainerLogs(arg1:string,arg2:string,arg3:string,arg4:number):Promise<string>;
+
 export function SaveGroup(arg1:models.Group):Promise<models.Group>;
 
 export function SavePresetCommand(arg1:models.PresetCommand):Promise<models.PresetCommand>;
@@ -144,6 +154,8 @@ export function SearchRemoteDir(arg1:string,arg2:string,arg3:string,arg4:boolean
 export function SelectLocalFile():Promise<string>;
 
 export function SelectLocalSavePath(arg1:string):Promise<string>;
+
+export function SelectUploadDirectory():Promise<string>;
 
 export function ServiceAction(arg1:string,arg2:string,arg3:string):Promise<Record<string, any>>;
 

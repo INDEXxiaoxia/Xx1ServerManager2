@@ -5,6 +5,7 @@ import {useRoute, useRouter} from 'vue-router'
 import {ElMessage} from 'element-plus'
 import {api} from '@/api'
 import Services from '../services/Index.vue'
+import HealthTool from './HealthTool.vue'
 import DiskTool from './DiskTool.vue'
 
 // 组件名供 Layout 的 <keep-alive :include> 匹配：切到其他页面时本页不销毁，
@@ -44,14 +45,15 @@ const tools = [
   },
   {
     key: 'health',
-    name: '服务器体检',
-    desc: '一条命令看清这台机器的整体健康度',
-    icon: 'FirstAidKit',
-    ready: false,
-    features: ['负载 / 失败服务 / 重启历史', '时间同步与证书到期', '内核参数与连接数']
+    name: '服务器检测',
+    desc: '系统信息、资源评估与日志',
+    icon: 'Monitor',
+    ready: true,
+    features: ['负载 / 失败服务 / 重启历史', '内存与磁盘占用评价', '内核参数与连接数']
   }
 ]
 
+const availableFirst = [...tools.filter(t => t.ready), ...tools.filter(t => !t.ready)]
 const LAST_SERVER_KEY = 'xx1.ops.serverId'
 
 const activeToolMeta = computed(() => tools.find(t => t.key === activeTool.value) || {name: '', desc: ''})
@@ -129,7 +131,7 @@ onActivated(async () => {
 
       <div class="ops-grid">
         <div
-          v-for="t in tools"
+          v-for="t in availableFirst"
           :key="t.key"
           class="tool-card"
           :class="{'is-ready': t.ready}"
@@ -168,12 +170,13 @@ onActivated(async () => {
         <span class="text-muted ops-tool-sub">{{ activeToolMeta.desc }}</span>
         <div v-if="activeTool !== 'services'" class="ops-toolbar-right">
           <span class="ops-label">服务器</span>
-          <GroupedServerSelect v-model="serverId" :servers="servers" style="width:260px" @change="onServerChange" />
+          <GroupedServerSelect v-model="serverId" :servers="servers" @change="onServerChange" />
           <span v-if="currentServer" class="text-muted mono ops-host">{{ currentServer.username }}@{{ currentServer.host }}</span>
         </div>
       </div>
 
       <Services v-if="activeTool === 'services'" />
+      <HealthTool v-else-if="activeTool === 'health' && serverId" :key="serverId" :server-id="serverId" />
       <DiskTool v-else-if="activeTool === 'disk' && serverId" :key="serverId" :server-id="serverId" />
       <div v-else class="card">
         <el-empty description="请先选择一台服务器" :image-size="80" />
@@ -392,11 +395,13 @@ onActivated(async () => {
   font-size: 12px;
 }
 .ops-toolbar-right {
+  flex-wrap:wrap;max-width:100%;
   margin-left: auto;
   display: flex;
   align-items: center;
   gap: 8px;
 }
+.ops-label,.ops-host {white-space:nowrap}
 .ops-label {
   font-size: 13px;
   color: var(--ink-2);

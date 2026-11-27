@@ -19,7 +19,8 @@ func main() {
 
 	// Create application with options
 	err := wails.Run(&options.App{
-		Title: "Xx1ServerManager2",
+		DragAndDrop: &options.DragAndDrop{EnableFileDrop: true},
+		Title:       "Xx1ServerManager2",
 		// 默认窗口：终端 + 右侧面板并排时 1440×950 比较舒展
 		Width:  geometry.Width,
 		Height: geometry.Height,

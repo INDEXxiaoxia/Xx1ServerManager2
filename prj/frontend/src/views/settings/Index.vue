@@ -10,35 +10,47 @@ async function selectBackground() {
 }
 import ReleaseHistory from '@/components/ReleaseHistory.vue'
 import {showImageHash} from '@/utils/display-options'
-import {ref, reactive, onMounted} from 'vue'
+import {ref, reactive, onMounted, watch} from 'vue'
 import {ElMessage} from 'element-plus'
 import {api} from '@/api'
 import {useAppStore} from '@/store'
 import {applyTheme, THEMES, getStoredTheme} from '@/theme'
 
-import config from '../../../../wails.json'
-const version = config.info.productVersion
+import {useRoute} from 'vue-router'
+import {BrowserOpenURL} from '../../../wailsjs/runtime/runtime'
+import {currentVersion as version, isNewerVersion, repositoryURL} from '@/utils/updates'
+const route = useRoute()
+const activeTab = ref('general')
 const releases = ref([])
 const latest = ref('')
 const updating = ref(false)
 const updateStatus = ref('')
+watch(() => [route.query.tab,route.query.version], ([tab,tag]) => {
+  if (tab !== 'updates') return
+  activeTab.value = 'updates'
+  if (typeof tag === 'string' && isNewerVersion(tag)) {
+    latest.value = tag
+    updateStatus.value = '发现新版本 ' + tag
+  }
+}, {immediate:true})
 async function checkUpdate() {
   updating.value = true
   latest.value = ''
   try {
     const [tag, records] = await Promise.all([window.go.main.App.LatestVersion(), window.go.main.App.RecentVersions()])
     releases.value = records
-    const newer = tag.replace(/^v/i, '').localeCompare(version, 'en', {numeric:true}) > 0
+    const newer = isNewerVersion(tag)
     if (newer) latest.value = tag
     updateStatus.value = newer ? '发现新版本 ' + tag : '当前已是最新版本'
   } catch (error) { updateStatus.value = '检查失败：' + error }
   finally { updating.value = false }
 }
+const portable = ref(false)
 async function downloadUpdate() {
   updating.value = true
   try {
-    const path = await window.go.main.App.DownloadUpdate(latest.value)
-    if (path) updateStatus.value = '安装包已保存到 ' + path
+    const path = await window.go.main.App.DownloadUpdatePackage(latest.value,portable.value)
+    if (path) updateStatus.value = '更新包已保存到 ' + path
   } catch (error) { updateStatus.value = '下载失败：' + error }
   finally { updating.value = false }
 }
@@ -206,8 +218,8 @@ async function setPassword() {
 </script>
 
 <template>
-  <div class="page-container"><el-tabs>
-    <el-tab-pane label="常规"><div class="card">
+  <div class="page-container"><el-tabs v-model="activeTab">
+    <el-tab-pane name="general" label="常规"><div class="card">
       <el-form label-width="165px" class="mt-12">
         <el-form-item label="最大并发数">
           <el-input-number v-model="settings.maxConcurrent" :min="1" :max="20" />
@@ -316,10 +328,11 @@ async function setPassword() {
     </div>
 
     </el-tab-pane>
-    <el-tab-pane label="版本与更新"><div class="card">
+    <el-tab-pane name="updates" label="版本与更新"><div class="card">
       <el-form label-width="165px"><el-form-item label="当前版本">v{{ version }}</el-form-item>
+      <el-form-item label="GitHub 仓库"><el-link type="primary" :href="repositoryURL" @click.prevent="BrowserOpenURL(repositoryURL)">INDEXxiaoxia / Xx1ServerManager2&nbsp;<el-icon><TopRight /></el-icon></el-link></el-form-item>
       <el-form-item label="在线更新"><el-button :loading="updating" @click="checkUpdate">检查更新</el-button>
-      <el-button v-if="latest" type="primary" :loading="updating" @click="downloadUpdate">下载 {{ latest }} 安装包</el-button></el-form-item>
+      <el-dropdown v-if="latest" split-button type="primary" :disabled="updating" @click="downloadUpdate" @command="v => portable = v === 'portable'">下载 {{ latest }} {{ portable ? '免安装版' : '安装版' }}<template #dropdown><el-dropdown-menu><el-dropdown-item command="installer">安装版</el-dropdown-item><el-dropdown-item command="portable">免安装版</el-dropdown-item></el-dropdown-menu></template></el-dropdown></el-form-item>
       <el-form-item v-if="updateStatus">{{ updateStatus }}</el-form-item></el-form>
       <ReleaseHistory v-if="releases.length" :records="releases" :version="version" />
     </div></el-tab-pane></el-tabs>
